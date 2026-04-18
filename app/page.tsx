@@ -60,6 +60,18 @@ export default function Home() {
           </a>
         </div>
       </main>
+      <div className="w-full overflow-hidden bg-zinc-900 py-3">
+        <div className="animate-marquee whitespace-nowrap text-sm text-zinc-300">
+          <span className="mx-8">🚀 Welcome to Next.js</span>
+          <span className="mx-8">⚡ Built with React & Tailwind CSS</span>
+          <span className="mx-8">🎨 Start building something amazing</span>
+          <span className="mx-8">📚 Check out the docs for more info</span>
+          <span className="mx-8">🚀 Welcome to Next.js</span>
+          <span className="mx-8">⚡ Built with React & Tailwind CSS</span>
+          <span className="mx-8">🎨 Start building something amazing</span>
+          <span className="mx-8">📚 Check out the docs for more info</span>
+        </div>
+      </div>
     </div>
   );
 }
