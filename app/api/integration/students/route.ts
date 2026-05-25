@@ -1,15 +1,17 @@
 import { type NextRequest } from 'next/server'
+import { prisma, ready } from '@/app/lib/prisma'
+import bcrypt from 'bcryptjs'
 
 const FIRST_NAMES = ['Ahmad', 'Sara', 'Omar', 'Lina', 'Khaled', 'Noor', 'Fadi', 'Reem', 'Tariq', 'Hala', 'Yousef', 'Dana', 'Mazen', 'Aya', 'Sami', 'Layla', 'Rami', 'Dina', 'Zaid', 'Mona']
 const LAST_NAMES = ['Haddad', 'Nasser', 'Khoury', 'Masri', 'Qasem', 'Salameh', 'Zahran', 'Dawood', 'Abdallat', 'Abu Zaid', 'Al-Khatib', 'Hamdan', 'Jarrar', 'Obeidat', 'Tawfiq']
 const FACULTIES = ['Engineering', 'Medicine', 'Science', 'IT', 'Arts', 'Law', 'Business', 'Pharmacy', 'Nursing', 'Dentistry']
-const GENDERS = ['MALE', 'FEMALE']
+const GENDERS = ['MALE', 'FEMALE'] as const
 
 function randomInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-function randomItem<T>(arr: T[]): T {
+function randomItem<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
@@ -57,10 +59,57 @@ export async function GET(request: NextRequest) {
     return true
   })
 
+  await ready()
+
+  // Save new students to the database
+  const passwordHash = await bcrypt.hash('password123', 10)
+  const syncedStudents = []
+
+  for (const s of unique) {
+    try {
+      // Check if patient already exists (checks for new data only)
+      let patientProfile = await prisma.patientProfile.findUnique({
+        where: { uniId: s.uniId },
+      })
+
+      if (!patientProfile) {
+        // Create user and profile
+        const user = await prisma.user.create({
+          data: {
+            username: s.uniId,
+            passwordHash,
+            plainPassword: 'password123',
+            email: s.email,
+            role: 'PATIENT',
+            patientProfile: {
+              create: {
+                fullName: s.fullName,
+                uniId: s.uniId,
+                gender: s.gender,
+                dob: new Date(s.dob),
+                phoneNumber: s.phoneNumber,
+                faculty: s.faculty,
+              },
+            },
+          },
+          include: {
+            patientProfile: true,
+          },
+        })
+        patientProfile = user.patientProfile
+        syncedStudents.push({ ...s, syncStatus: 'CREATED' })
+      } else {
+        syncedStudents.push({ ...s, syncStatus: 'EXISTS' })
+      }
+    } catch {
+      syncedStudents.push({ ...s, syncStatus: 'ERROR' })
+    }
+  }
+
   return Response.json({
     success: true,
-    count: unique.length,
+    count: syncedStudents.length,
     fetchedAt: new Date().toISOString(),
-    students: unique,
+    students: syncedStudents,
   })
 }

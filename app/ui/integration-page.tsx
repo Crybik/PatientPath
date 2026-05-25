@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
 import { addIntegrationEndpoint, removeIntegrationEndpoint, setLastFetch, toggleIntegrationEndpoint, updateWorkerInterval } from '@/app/actions/admin'
-import { IconActivity, IconClose, IconGlobe, IconLoader, IconPause, IconPlay, IconPlug, IconPlus, IconRefresh, IconSend, IconStop, IconTimer, IconTrash, IconZap } from '@/app/ui/icons'
+import { IconGlobe, IconLoader, IconPause, IconPlay, IconPlug, IconPlus, IconRefresh, IconSend, IconStop, IconTimer, IconTrash, IconUsers, IconClipboard, IconFlask, IconPill } from '@/app/ui/icons'
 import { AnimatePresence, FadeInUp, motion, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 
-type Endpoint = { id: string; url: string; method: string; params: Record<string, string>; enabled: boolean }
+type Endpoint = { id: string; url: string; method: string; params: Record<string, string>; enabled: boolean; category: string }
 type Settings = { endpoints: Endpoint[]; workerIntervalMs: number; lastFetch: string | null }
 
 const METHOD_COLORS: Record<string, string> = {
@@ -29,12 +29,30 @@ const DURATION_PRESETS = [
   { label: '1d', ms: 86400000 },
 ]
 
+const CATEGORIES = [
+  { id: 'students', label: 'Students & Users', desc: 'Sync student details and academic registration data.', Icon: IconUsers },
+  { id: 'clinics', label: 'Clinics & Slots', desc: 'Sync clinics, availability schedules, and appointments.', Icon: IconClipboard },
+  { id: 'labs', label: 'Lab Diagnostics', desc: 'Sync laboratory test requests, results, and statuses.', Icon: IconFlask },
+  { id: 'pharmacy', label: 'Pharmacy & Rx', desc: 'Sync pharmaceutical prescription data and dispensing records.', Icon: IconPill },
+] as const
+
 export function IntegrationPage({ initialSettings }: { initialSettings: Settings }) {
   const [settings, setSettings] = useState(initialSettings)
   const [isPending, startTransition] = useTransition()
   const [workerRunning, setWorkerRunning] = useState(false)
   const [fetchCount, setFetchCount] = useState(0)
   const workerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Active Category Tab
+  const [activeCategory, setActiveCategory] = useState<'students' | 'clinics' | 'labs' | 'pharmacy'>('students')
+
+  // Live Console Logs
+  const [logs, setLogs] = useState<{ time: string; type: 'info' | 'success' | 'error'; text: string }[]>([])
+
+  const addLog = useCallback((text: string, type: 'info' | 'success' | 'error' = 'info') => {
+    const time = new Date().toLocaleTimeString(undefined, { hour12: false })
+    setLogs((prev) => [{ time, type, text }, ...prev].slice(0, 100))
+  }, [])
 
   // Endpoint tester state
   const [testMethod, setTestMethod] = useState('GET')
@@ -55,20 +73,50 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
 
   // Worker
   const runWorker = useCallback(async () => {
+    addLog('Starting integration fetch round...', 'info')
+    let successCount = 0
+    let enabledCount = 0
+
+    // Fetch all enabled endpoints across all categories
     for (const ep of settings.endpoints) {
       if (!ep.enabled) continue
+      enabledCount++
+      const startTime = performance.now()
       try {
         const url = new URL(ep.url, window.location.origin)
         Object.entries(ep.params).forEach(([k, v]) => url.searchParams.set(k, v))
-        await fetch(url.toString(), { method: ep.method, cache: 'no-store' })
+        
+        addLog(`Fetching [${ep.category?.toUpperCase() || 'STUDENTS'}] ${ep.method} ${ep.url}...`, 'info')
+        
+        const res = await fetch(url.toString(), { method: ep.method, cache: 'no-store' })
+        const duration = Math.round(performance.now() - startTime)
+        
+        if (res.ok) {
+          addLog(`SUCCESS: [${ep.category?.toUpperCase() || 'STUDENTS'}] ${ep.method} ${ep.url} -> Status ${res.status} (${duration}ms)`, 'success')
+          successCount++
+        } else {
+          addLog(`FAILED: [${ep.category?.toUpperCase() || 'STUDENTS'}] ${ep.method} ${ep.url} -> Status ${res.status} (${duration}ms)`, 'error')
+        }
+        
         setFetchCount((c) => c + 1)
         await setLastFetch()
-      } catch { /* silent */ }
+        // Update local state so UI updates the "Last Fetch" timestamp immediately
+        setSettings((s) => ({ ...s, lastFetch: new Date().toISOString() }))
+      } catch (err: any) {
+        addLog(`ERROR: [${ep.category?.toUpperCase() || 'STUDENTS'}] ${ep.method} ${ep.url} failed: ${err.message || err}`, 'error')
+      }
     }
-  }, [settings.endpoints])
+    
+    if (enabledCount === 0) {
+      addLog('No integration endpoints are currently enabled.', 'info')
+    } else {
+      addLog(`Integration fetch round completed. Successful: ${successCount}/${enabledCount}`, successCount === enabledCount ? 'success' : 'info')
+    }
+  }, [settings.endpoints, addLog])
 
   function startWorker() {
     if (workerRef.current) clearInterval(workerRef.current)
+    addLog(`Background worker started (Interval: ${settings.workerIntervalMs / 1000}s)`, 'success')
     void runWorker()
     workerRef.current = setInterval(() => void runWorker(), settings.workerIntervalMs)
     setWorkerRunning(true)
@@ -78,6 +126,7 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
     if (workerRef.current) clearInterval(workerRef.current)
     workerRef.current = null
     setWorkerRunning(false)
+    addLog('Background worker stopped.', 'info')
   }
 
   useEffect(() => {
@@ -93,7 +142,10 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
 
   function handleIntervalChange(ms: number) {
     setSettings((s) => ({ ...s, workerIntervalMs: ms }))
-    startTransition(async () => { await updateWorkerInterval(ms) })
+    startTransition(async () => { 
+      await updateWorkerInterval(ms)
+      addLog(`Worker interval updated to ${ms / 1000}s`, 'info')
+    })
   }
 
   function handleAddEndpoint() {
@@ -106,11 +158,12 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
       })
     }
     startTransition(async () => {
-      await addIntegrationEndpoint({ url: newUrl, method: newMethod, params })
+      await addIntegrationEndpoint({ url: newUrl, method: newMethod, params, category: activeCategory })
       setSettings((s) => ({
         ...s,
-        endpoints: [...s.endpoints, { id: `ep-${Date.now()}`, url: newUrl, method: newMethod, params, enabled: true }],
+        endpoints: [...s.endpoints, { id: `ep-${Date.now()}`, url: newUrl, method: newMethod, params, enabled: true, category: activeCategory }],
       }))
+      addLog(`Configured new endpoint: [${activeCategory.toUpperCase()}] ${newMethod} ${newUrl}`, 'success')
       setNewUrl('')
       setNewParams('')
       setShowAddForm(false)
@@ -118,19 +171,23 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
   }
 
   function handleRemove(id: string) {
+    const ep = settings.endpoints.find(e => e.id === id)
     startTransition(async () => {
       await removeIntegrationEndpoint(id)
       setSettings((s) => ({ ...s, endpoints: s.endpoints.filter((e) => e.id !== id) }))
+      if (ep) addLog(`Removed endpoint: [${(ep.category || 'students').toUpperCase()}] ${ep.method} ${ep.url}`, 'info')
     })
   }
 
   function handleToggle(id: string) {
+    const ep = settings.endpoints.find(e => e.id === id)
     startTransition(async () => {
       await toggleIntegrationEndpoint(id)
       setSettings((s) => ({
         ...s,
         endpoints: s.endpoints.map((e) => e.id === id ? { ...e, enabled: !e.enabled } : e),
       }))
+      if (ep) addLog(`${ep.enabled ? 'Disabled' : 'Enabled'} endpoint: [${(ep.category || 'students').toUpperCase()}] ${ep.method} ${ep.url}`, 'info')
     })
   }
 
@@ -139,6 +196,7 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
     setTestLoading(true)
     setTestResponse(null)
     const start = performance.now()
+    addLog(`API Tester: Sending manual request ${testMethod} ${testUrl}...`, 'info')
     try {
       const url = new URL(testUrl, window.location.origin)
       if (testParams && testMethod === 'GET') {
@@ -173,19 +231,32 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
       }
 
       setTestResponse({ status: res.status, time, data, headers: resHeaders })
+      if (res.ok) {
+        addLog(`API Tester SUCCESS: ${testMethod} ${testUrl} -> Status ${res.status} (${time}ms)`, 'success')
+      } else {
+        addLog(`API Tester FAILED: ${testMethod} ${testUrl} -> Status ${res.status} (${time}ms)`, 'error')
+      }
     } catch (err: any) {
-      setTestResponse({ status: 0, time: Math.round(performance.now() - start), data: { error: err.message }, headers: {} })
+      const time = Math.round(performance.now() - start)
+      setTestResponse({ status: 0, time, data: { error: err.message }, headers: {} })
+      addLog(`API Tester ERROR: ${testMethod} ${testUrl} failed: ${err.message || err} (${time}ms)`, 'error')
     } finally {
       setTestLoading(false)
     }
   }
 
+  // Filter endpoints for the current active tab
+  const filteredEndpoints = settings.endpoints.filter((ep) => {
+    const cat = ep.category || 'students'
+    return cat === activeCategory
+  })
+
   return (
     <div className="space-y-8">
       <FadeInUp>
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-gradient-to-br from-accent to-accent-bright p-2.5 shadow-lg shadow-accent/20">
-            <IconPlug className="w-5 h-5 text-white" />
+        <div className="flex items-center gap-4">
+          <div className="rounded-2xl bg-gradient-to-br from-accent to-accent-bright p-3.5 shadow-lg shadow-accent/20">
+            <IconPlug className="w-7 h-7 text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-primary">Integrations</h1>
@@ -201,8 +272,8 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
         transition={{ delay: 0.1 }}
         className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden"
       >
-        <div className="border-b border-border bg-surface-elevated px-5 py-3 flex items-center gap-2">
-          <IconSend className="w-4 h-4 text-accent" />
+        <div className="border-b border-border bg-surface-elevated px-5 py-4 flex items-center gap-2.5">
+          <IconSend className="w-5 h-5 text-accent font-bold" />
           <h2 className="text-sm font-semibold text-primary">API Tester</h2>
         </div>
 
@@ -223,7 +294,7 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
               disabled={testLoading || !testUrl}
               className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-accent/20 transition-all hover:shadow-accent/30 disabled:opacity-50"
             >
-              {testLoading ? <IconLoader className="w-4 h-4 animate-spin" /> : <IconSend className="w-4 h-4" />}
+              {testLoading ? <IconLoader className="w-5 h-5 animate-spin" /> : <IconSend className="w-5 h-5" />}
               Send
             </button>
           </div>
@@ -299,14 +370,21 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
         className="rounded-xl border border-border bg-surface p-5 shadow-sm"
       >
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <IconTimer className="w-4 h-4 text-accent" />
+          <div className="flex items-center gap-2.5">
+            <IconTimer className="w-5 h-5 text-accent font-bold" />
             <h2 className="text-sm font-semibold text-primary">Background Worker</h2>
           </div>
-          <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${workerRunning ? 'bg-success animate-pulse' : 'bg-muted'}`} />
-            <span className="text-xs font-medium text-muted">{workerRunning ? 'Running' : 'Stopped'}</span>
-            {fetchCount > 0 && <span className="text-xs text-accent font-mono">({fetchCount} fetches)</span>}
+          <div className="flex flex-wrap items-center gap-3">
+            {settings.lastFetch && (
+              <span className="text-xs text-muted">
+                Last fetch: <strong className="text-primary-soft">{new Date(settings.lastFetch).toLocaleTimeString()}</strong>
+              </span>
+            )}
+            <div className="flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${workerRunning ? 'bg-success animate-pulse' : 'bg-muted'}`} />
+              <span className="text-xs font-medium text-muted">{workerRunning ? 'Running' : 'Stopped'}</span>
+              {fetchCount > 0 && <span className="text-xs text-accent font-mono">({fetchCount} fetches)</span>}
+            </div>
           </div>
         </div>
 
@@ -323,15 +401,53 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
         </div>
 
         <div className="flex gap-2">
-          <button onClick={startWorker} disabled={workerRunning} className="flex items-center gap-1.5 rounded-lg bg-success px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all">
-            <IconPlay className="w-3.5 h-3.5" /> Start
+          <button onClick={startWorker} disabled={workerRunning} className="flex items-center gap-2 rounded-lg bg-success px-4 py-2.5 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all hover:bg-success-dark">
+            <IconPlay className="w-4 h-4" /> Start
           </button>
-          <button onClick={stopWorker} disabled={!workerRunning} className="flex items-center gap-1.5 rounded-lg bg-danger px-4 py-2 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all">
-            <IconStop className="w-3.5 h-3.5" /> Stop
+          <button onClick={stopWorker} disabled={!workerRunning} className="flex items-center gap-2 rounded-lg bg-danger px-4 py-2.5 text-xs font-semibold text-white shadow-sm disabled:opacity-50 transition-all hover:bg-danger-dark">
+            <IconStop className="w-4 h-4" /> Stop
           </button>
-          <button onClick={runWorker} className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-medium text-muted hover:text-primary hover:border-accent/40 transition-all">
-            <IconRefresh className="w-3.5 h-3.5" /> Fetch Now
+          <button onClick={runWorker} className="flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-xs font-medium text-muted hover:text-primary hover:border-accent/40 transition-all">
+            <IconRefresh className="w-4 h-4" /> Fetch Now
           </button>
+        </div>
+
+        {/* Live Terminal Console */}
+        <div className="mt-5 border-t border-border/60 pt-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold tracking-wider text-muted-soft uppercase flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full ${workerRunning ? 'bg-success animate-pulse' : 'bg-muted'}`} />
+              Live Terminal Output
+            </span>
+            {logs.length > 0 && (
+              <button
+                onClick={() => setLogs([])}
+                className="text-[10px] text-muted hover:text-primary transition-colors hover:underline"
+              >
+                Clear Console
+              </button>
+            )}
+          </div>
+          
+          <div className="h-44 rounded-lg bg-neutral-955 p-3 font-mono text-[11px] overflow-y-auto space-y-1.5 border border-neutral-900 shadow-inner scrollbar-thin">
+            {logs.length > 0 ? (
+              logs.map((log, idx) => (
+                <div key={idx} className="flex gap-2 leading-relaxed">
+                  <span className="text-neutral-500 select-none">[{log.time}]</span>
+                  <span className={
+                    log.type === 'success' ? 'text-emerald-400' :
+                    log.type === 'error' ? 'text-rose-400 font-semibold' : 'text-neutral-300'
+                  }>
+                    {log.text}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="h-full flex items-center justify-center text-neutral-600 select-none">
+                Console idle. Start worker or click "Fetch Now" to see live activity.
+              </div>
+            )}
+          </div>
         </div>
       </motion.div>
 
@@ -343,41 +459,85 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
         className="rounded-xl border border-border bg-surface p-5 shadow-sm"
       >
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <IconGlobe className="w-4 h-4 text-accent" />
+          <div className="flex items-center gap-2.5">
+            <IconGlobe className="w-5 h-5 text-accent font-bold" />
             <h2 className="text-sm font-semibold text-primary">Configured Endpoints</h2>
           </div>
-          <button onClick={() => setShowAddForm(!showAddForm)} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${showAddForm ? 'bg-accent text-white' : 'border border-border text-muted hover:text-primary hover:border-accent/40'}`}>
-            <IconPlus className="w-3.5 h-3.5" /> Add
+          <button onClick={() => setShowAddForm(!showAddForm)} className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${showAddForm ? 'bg-accent text-white' : 'border border-border text-muted hover:text-primary hover:border-accent/40'}`}>
+            <IconPlus className="w-4 h-4" /> Add
           </button>
         </div>
 
+        {/* Category Tabs */}
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-4 gap-3 border-b border-border pb-5">
+          {CATEGORIES.map((cat) => {
+            const CatIcon = cat.Icon
+            return (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  setActiveCategory(cat.id)
+                  // Also prefill the API Tester URL with the default URL for that category
+                  const defaultUrls: Record<string, string> = {
+                    students: '/api/integration/students',
+                    clinics: '/api/integration/clinics',
+                    labs: '/api/integration/lab-tests',
+                    pharmacy: '/api/integration/prescriptions',
+                  }
+                  setTestUrl(defaultUrls[cat.id] || '/api/integration/students')
+                }}
+                className={`rounded-xl p-4 text-left transition-all border flex flex-col gap-3 ${
+                  activeCategory === cat.id
+                    ? 'bg-accent/10 border-accent/40 text-accent shadow-sm shadow-accent/5'
+                    : 'bg-surface-elevated/40 border-border/40 text-muted hover:text-primary hover:border-accent/20'
+                }`}
+              >
+                <div className={`rounded-lg p-2.5 w-fit ${
+                  activeCategory === cat.id ? 'bg-accent/20 text-accent' : 'bg-surface-elevated text-muted-soft'
+                }`}>
+                  <CatIcon className="w-5.5 h-5.5 font-bold" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold">{cat.label}</div>
+                  <div className="text-[10px] text-muted-soft mt-1 leading-normal">{cat.desc}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
         <StaggerContainer className="space-y-2 mb-4">
-          {settings.endpoints.map((ep) => (
-            <StaggerItem key={ep.id}>
-              <div className={`flex items-center justify-between rounded-lg border p-3 transition-all ${ep.enabled ? 'border-border bg-surface-elevated' : 'border-border/50 bg-background opacity-60'}`}>
-                <div className="flex items-center gap-3">
-                  <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${METHOD_COLORS[ep.method] ?? 'border-border text-muted'}`}>
-                    {ep.method}
-                  </span>
-                  <div>
-                    <span className="text-sm font-mono text-primary">{ep.url}</span>
-                    {Object.keys(ep.params).length > 0 && (
-                      <p className="text-[11px] text-muted mt-0.5">Params: {Object.entries(ep.params).map(([k, v]) => `${k}=${v}`).join(', ')}</p>
-                    )}
+          {filteredEndpoints.length > 0 ? (
+            filteredEndpoints.map((ep) => (
+              <StaggerItem key={ep.id}>
+                <div className={`flex items-center justify-between rounded-lg border p-3 transition-all ${ep.enabled ? 'border-border bg-surface-elevated' : 'border-border/50 bg-background opacity-60'}`}>
+                  <div className="flex items-center gap-3">
+                    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${METHOD_COLORS[ep.method] ?? 'border-border text-muted'}`}>
+                      {ep.method}
+                    </span>
+                    <div>
+                      <span className="text-sm font-mono text-primary">{ep.url}</span>
+                      {Object.keys(ep.params).length > 0 && (
+                        <p className="text-[11px] text-muted mt-0.5">Params: {Object.entries(ep.params).map(([k, v]) => `${k}=${v}`).join(', ')}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => handleToggle(ep.id)} className="rounded-lg border border-border p-2 text-muted hover:text-primary transition-colors" title={ep.enabled ? 'Pause' : 'Resume'}>
+                      {ep.enabled ? <IconPause className="w-4.5 h-4.5" /> : <IconPlay className="w-4.5 h-4.5" />}
+                    </button>
+                    <button onClick={() => handleRemove(ep.id)} className="rounded-lg border border-danger/20 p-2 text-danger hover:bg-danger/5 transition-colors" title="Remove">
+                      <IconTrash className="w-4.5 h-4.5" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => handleToggle(ep.id)} className="rounded-lg border border-border p-1.5 text-muted hover:text-primary transition-colors" title={ep.enabled ? 'Pause' : 'Resume'}>
-                    {ep.enabled ? <IconPause className="w-3.5 h-3.5" /> : <IconPlay className="w-3.5 h-3.5" />}
-                  </button>
-                  <button onClick={() => handleRemove(ep.id)} className="rounded-lg border border-danger/20 p-1.5 text-danger hover:bg-danger/5 transition-colors" title="Remove">
-                    <IconTrash className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </StaggerItem>
-          ))}
+              </StaggerItem>
+            ))
+          ) : (
+            <div className="text-center py-8 text-xs text-muted border border-dashed border-border rounded-lg bg-surface-elevated/20">
+              No custom endpoints configured for this category.
+            </div>
+          )}
         </StaggerContainer>
 
         {/* Add endpoint form */}
@@ -393,10 +553,10 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
                 <select value={newMethod} onChange={(e) => setNewMethod(e.target.value)} className="rounded-lg border border-border bg-surface-elevated px-3 py-2 text-xs font-bold">
                   {['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].map((m) => <option key={m}>{m}</option>)}
                 </select>
-                <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="URL path (e.g. /api/integration/students)" className="flex-1 min-w-[200px] rounded-lg border border-border bg-surface-elevated px-3 py-2 text-xs font-mono outline-none focus:border-accent" />
+                <input value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder={`URL path (e.g. /api/integration/${activeCategory})`} className="flex-1 min-w-[200px] rounded-lg border border-border bg-surface-elevated px-3 py-2 text-xs font-mono outline-none focus:border-accent" />
                 <input value={newParams} onChange={(e) => setNewParams(e.target.value)} placeholder="count=100&type=new" className="flex-1 min-w-[150px] rounded-lg border border-border bg-surface-elevated px-3 py-2 text-xs outline-none focus:border-accent" />
-                <button onClick={handleAddEndpoint} disabled={!newUrl || isPending} className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-accent/20 disabled:opacity-50">
-                  <IconPlus className="w-3.5 h-3.5" /> Add Endpoint
+                <button onClick={handleAddEndpoint} disabled={!newUrl || isPending} className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white shadow-sm shadow-accent/20 disabled:opacity-50">
+                  <IconPlus className="w-4 h-4" /> Add Endpoint
                 </button>
               </div>
             </motion.div>

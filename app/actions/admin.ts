@@ -137,7 +137,7 @@ export async function getAdminStats() {
 // Store in a global for simplicity (in production, use DB or Redis)
 declare global {
   var __integrationConfig: {
-    endpoints: { id: string; url: string; method: string; params: Record<string, string>; enabled: boolean }[]
+    endpoints: { id: string; url: string; method: string; params: Record<string, string>; enabled: boolean; category: string }[]
     workerIntervalMs: number
     lastFetch: string | null
   } | undefined
@@ -153,6 +153,39 @@ function getIntegrationConfig() {
           method: 'GET',
           params: { count: '100' },
           enabled: true,
+          category: 'students',
+        },
+        {
+          id: 'clinics-api',
+          url: '/api/integration/clinics',
+          method: 'GET',
+          params: { limit: '10' },
+          enabled: true,
+          category: 'clinics',
+        },
+        {
+          id: 'appointments-api',
+          url: '/api/integration/appointments',
+          method: 'GET',
+          params: { date: 'today' },
+          enabled: true,
+          category: 'clinics',
+        },
+        {
+          id: 'lab-tests-api',
+          url: '/api/integration/lab-tests',
+          method: 'GET',
+          params: { status: 'PENDING' },
+          enabled: true,
+          category: 'labs',
+        },
+        {
+          id: 'prescriptions-api',
+          url: '/api/integration/prescriptions',
+          method: 'GET',
+          params: { limit: '10' },
+          enabled: true,
+          category: 'pharmacy',
         },
       ],
       workerIntervalMs: 3600000, // 1 hour
@@ -174,7 +207,7 @@ export async function updateWorkerInterval(intervalMs: number) {
   return { success: true, message: `Worker interval set to ${intervalMs}ms.` }
 }
 
-export async function addIntegrationEndpoint(endpoint: { url: string; method: string; params: Record<string, string> }) {
+export async function addIntegrationEndpoint(endpoint: { url: string; method: string; params: Record<string, string>; category: string }) {
   await requireAdmin()
   const config = getIntegrationConfig()
   config.endpoints.push({
@@ -183,6 +216,7 @@ export async function addIntegrationEndpoint(endpoint: { url: string; method: st
     method: endpoint.method,
     params: endpoint.params,
     enabled: true,
+    category: endpoint.category || 'students',
   })
   return { success: true }
 }
