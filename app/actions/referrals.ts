@@ -7,6 +7,7 @@ import {
   ReferralStatus,
   UserRole,
 } from '@/app/generated/prisma'
+import { createNotification } from '@/app/lib/clinical-data'
 import { prisma, ready } from '@/app/lib/prisma'
 import { getSession } from '@/app/lib/session'
 
@@ -38,10 +39,20 @@ const AcceptForwardSchema = z.object({
   note: NoteSchema,
 })
 
+const RejectForwardSchema = z.object({
+  referralId: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(8, 'Provide a reason (at least 8 characters).').max(2000),
+})
+
 const ForwardAgainSchema = z.object({
   referralId: z.coerce.number().int().positive(),
   clinicId: z.coerce.number().int().positive(),
   slotId: z.coerce.number().int().positive(),
+  note: NoteSchema,
+})
+
+const CompleteSchema = z.object({
+  referralId: z.coerce.number().int().positive(),
   note: NoteSchema,
 })
 
@@ -98,7 +109,7 @@ export async function createForwardNote(
       const [patient, clinic, slot, specialist] = await Promise.all([
         tx.patientProfile.findUnique({
           where: { id: patientId },
-          select: { id: true },
+          select: { id: true, userId: true },
         }),
         tx.clinic.findFirst({
           where: { id: clinicId, hospitalId },
@@ -106,12 +117,7 @@ export async function createForwardNote(
         }),
         tx.clinicAvailabilitySlot.findFirst({
           where: { id: slotId, clinicId },
-          select: {
-            id: true,
-            startsAt: true,
-            capacity: true,
-            bookedCount: true,
-          },
+          select: { id: true, startsAt: true, capacity: true, bookedCount: true },
         }),
         tx.staffProfile.findFirst({
           where: { hospitalId, user: { role: UserRole.SPECIALIST } },
@@ -123,9 +129,7 @@ export async function createForwardNote(
       if (!clinic) throw new Error('Selected clinic does not belong to this hospital.')
       if (!slot) throw new Error('Selected availability slot was not found.')
       if (slot.startsAt < new Date()) throw new Error('Selected time is no longer available.')
-      if (slot.bookedCount >= slot.capacity) {
-        throw new Error('Selected time is fully booked.')
-      }
+      if (slot.bookedCount >= slot.capacity) throw new Error('Selected time is fully booked.')
 
       await tx.clinicAvailabilitySlot.update({
         where: { id: slot.id },
@@ -158,21 +162,38 @@ export async function createForwardNote(
         },
       })
 
+      // Notify patient
+      await tx.notification.create({
+        data: {
+          userId: patient.userId,
+          message: `A new referral has been created for you.`,
+          type: 'referral_created',
+        },
+      })
+
+      // Notify specialist
+      if (specialist) {
+        await tx.notification.create({
+          data: {
+            userId: specialist.userId,
+            message: `New referral pending your review.`,
+            type: 'referral_pending',
+          },
+        })
+      }
+
       return referral
     })
 
     revalidatePath('/dashboard')
     return {
       success: true,
-      message: `Forward note #${result.id} was sent to Jordan University Hospital.`,
+      message: `Forward note #${result.id} was sent successfully.`,
       version: Date.now(),
     }
   } catch (error) {
     return {
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Could not create the forward note.',
+      message: error instanceof Error ? error.message : 'Could not create the forward note.',
     }
   }
 }
@@ -188,29 +209,20 @@ export async function acceptForward(
     referralId: formData.get('referralId'),
     note: formData.get('note'),
   })
-  if (!parsed.success) {
-    return { errors: fieldErrors(parsed.error) }
-  }
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) }
 
   await ready()
-
   const { referralId, note } = parsed.data
 
   try {
     const referral = await prisma.referral.findUnique({
       where: { id: referralId },
-      select: { id: true, hospitalId: true },
+      select: { id: true, hospitalId: true, patient: { select: { userId: true } }, createdById: true },
     })
     if (!referral) return { message: 'Forward was not found.' }
 
-    const allowed = await canManageReferral(
-      auth.session.userId,
-      auth.session.role,
-      referral.hospitalId,
-    )
-    if (!allowed) {
-      return { message: 'You cannot manage forwards for this hospital.' }
-    }
+    const allowed = await canManageReferral(auth.session.userId, auth.session.role, referral.hospitalId)
+    if (!allowed) return { message: 'You cannot manage forwards for this hospital.' }
 
     await prisma.$transaction([
       prisma.referral.update({
@@ -230,16 +242,173 @@ export async function acceptForward(
           note,
         },
       }),
+      prisma.notification.create({
+        data: {
+          userId: referral.patient.userId,
+          message: 'Your referral has been accepted by a specialist.',
+          type: 'referral_accepted',
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.createdById,
+          message: `Referral #${referralId} has been accepted.`,
+          type: 'referral_accepted',
+        },
+      }),
     ])
 
     revalidatePath('/dashboard')
     return {
       success: true,
-      message: 'Forward was accepted and the patient timeline was updated.',
+      message: 'Forward was accepted.',
       version: Date.now(),
     }
   } catch {
     return { message: 'Could not accept this forward.' }
+  }
+}
+
+export async function rejectForward(
+  _state: ReferralActionState,
+  formData: FormData,
+): Promise<ReferralActionState> {
+  const auth = await requireSession([UserRole.SPECIALIST, UserRole.SUPER_ADMIN])
+  if ('error' in auth) return { message: auth.error }
+
+  const parsed = RejectForwardSchema.safeParse({
+    referralId: formData.get('referralId'),
+    reason: formData.get('reason'),
+  })
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) }
+
+  await ready()
+  const { referralId, reason } = parsed.data
+
+  try {
+    const referral = await prisma.referral.findUnique({
+      where: { id: referralId },
+      select: { id: true, hospitalId: true, slotId: true, patient: { select: { userId: true } }, createdById: true },
+    })
+    if (!referral) return { message: 'Forward was not found.' }
+
+    const allowed = await canManageReferral(auth.session.userId, auth.session.role, referral.hospitalId)
+    if (!allowed) return { message: 'You cannot manage forwards for this hospital.' }
+
+    await prisma.$transaction(async (tx) => {
+      // Free up the slot
+      if (referral.slotId) {
+        await tx.clinicAvailabilitySlot.updateMany({
+          where: { id: referral.slotId, bookedCount: { gt: 0 } },
+          data: { bookedCount: { decrement: 1 } },
+        })
+      }
+
+      await tx.referral.update({
+        where: { id: referralId },
+        data: {
+          status: ReferralStatus.REJECTED,
+          rejectionReason: reason,
+          currentSpecialistId: auth.session.userId,
+        },
+      })
+
+      await tx.referralEvent.create({
+        data: {
+          referralId,
+          actorId: auth.session.userId,
+          type: ReferralEventType.REJECTED,
+          note: reason,
+        },
+      })
+
+      await tx.notification.create({
+        data: {
+          userId: referral.patient.userId,
+          message: 'Your referral has been rejected.',
+          type: 'referral_rejected',
+        },
+      })
+
+      await tx.notification.create({
+        data: {
+          userId: referral.createdById,
+          message: `Referral #${referralId} was rejected.`,
+          type: 'referral_rejected',
+        },
+      })
+    })
+
+    revalidatePath('/dashboard')
+    return { success: true, message: 'Forward was rejected.', version: Date.now() }
+  } catch {
+    return { message: 'Could not reject this forward.' }
+  }
+}
+
+export async function completeReferral(
+  _state: ReferralActionState,
+  formData: FormData,
+): Promise<ReferralActionState> {
+  const auth = await requireSession([UserRole.SPECIALIST, UserRole.SUPER_ADMIN])
+  if ('error' in auth) return { message: auth.error }
+
+  const parsed = CompleteSchema.safeParse({
+    referralId: formData.get('referralId'),
+    note: formData.get('note'),
+  })
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) }
+
+  await ready()
+  const { referralId, note } = parsed.data
+
+  try {
+    const referral = await prisma.referral.findUnique({
+      where: { id: referralId },
+      select: { id: true, hospitalId: true, patient: { select: { userId: true } }, createdById: true },
+    })
+    if (!referral) return { message: 'Forward was not found.' }
+
+    const allowed = await canManageReferral(auth.session.userId, auth.session.role, referral.hospitalId)
+    if (!allowed) return { message: 'You cannot manage forwards for this hospital.' }
+
+    await prisma.$transaction([
+      prisma.referral.update({
+        where: { id: referralId },
+        data: {
+          status: ReferralStatus.COMPLETED,
+          specialistNote: note,
+          currentSpecialistId: auth.session.userId,
+        },
+      }),
+      prisma.referralEvent.create({
+        data: {
+          referralId,
+          actorId: auth.session.userId,
+          type: ReferralEventType.COMPLETED,
+          note,
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.patient.userId,
+          message: 'Your referral has been completed.',
+          type: 'referral_completed',
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.createdById,
+          message: `Referral #${referralId} has been completed.`,
+          type: 'referral_completed',
+        },
+      }),
+    ])
+
+    revalidatePath('/dashboard')
+    return { success: true, message: 'Referral marked as completed.', version: Date.now() }
+  } catch {
+    return { message: 'Could not complete this referral.' }
   }
 }
 
@@ -256,35 +425,21 @@ export async function forwardToAnotherClinic(
     slotId: formData.get('slotId'),
     note: formData.get('note'),
   })
-  if (!parsed.success) {
-    return { errors: fieldErrors(parsed.error) }
-  }
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) }
 
   await ready()
-
   const { referralId, clinicId, slotId, note } = parsed.data
 
   try {
     await prisma.$transaction(async (tx) => {
       const referral = await tx.referral.findUnique({
         where: { id: referralId },
-        select: {
-          id: true,
-          hospitalId: true,
-          clinicId: true,
-          slotId: true,
-        },
+        select: { id: true, hospitalId: true, clinicId: true, slotId: true, patient: { select: { userId: true } } },
       })
       if (!referral) throw new Error('Forward was not found.')
 
-      const allowed = await canManageReferral(
-        auth.session.userId,
-        auth.session.role,
-        referral.hospitalId,
-      )
-      if (!allowed) {
-        throw new Error('You cannot manage forwards for this hospital.')
-      }
+      const allowed = await canManageReferral(auth.session.userId, auth.session.role, referral.hospitalId)
+      if (!allowed) throw new Error('You cannot manage forwards for this hospital.')
 
       const [clinic, slot] = await Promise.all([
         tx.clinic.findFirst({
@@ -293,28 +448,18 @@ export async function forwardToAnotherClinic(
         }),
         tx.clinicAvailabilitySlot.findFirst({
           where: { id: slotId, clinicId },
-          select: {
-            id: true,
-            startsAt: true,
-            capacity: true,
-            bookedCount: true,
-          },
+          select: { id: true, startsAt: true, capacity: true, bookedCount: true },
         }),
       ])
 
       if (!clinic) throw new Error('Selected clinic does not belong to this hospital.')
       if (!slot) throw new Error('Selected availability slot was not found.')
       if (slot.startsAt < new Date()) throw new Error('Selected time is no longer available.')
-      if (slot.bookedCount >= slot.capacity) {
-        throw new Error('Selected time is fully booked.')
-      }
+      if (slot.bookedCount >= slot.capacity) throw new Error('Selected time is fully booked.')
 
       if (referral.slotId && referral.slotId !== slot.id) {
         await tx.clinicAvailabilitySlot.updateMany({
-          where: {
-            id: referral.slotId,
-            bookedCount: { gt: 0 },
-          },
+          where: { id: referral.slotId, bookedCount: { gt: 0 } },
           data: { bookedCount: { decrement: 1 } },
         })
       }
@@ -349,20 +494,19 @@ export async function forwardToAnotherClinic(
           note,
         },
       })
+
+      await tx.notification.create({
+        data: {
+          userId: referral.patient.userId,
+          message: 'Your referral has been forwarded to another clinic.',
+          type: 'referral_forwarded',
+        },
+      })
     })
 
     revalidatePath('/dashboard')
-    return {
-      success: true,
-      message: 'Forward was routed to the selected clinic and time.',
-      version: Date.now(),
-    }
+    return { success: true, message: 'Forward was routed to the selected clinic.', version: Date.now() }
   } catch (error) {
-    return {
-      message:
-        error instanceof Error
-          ? error.message
-          : 'Could not route this forward.',
-    }
+    return { message: error instanceof Error ? error.message : 'Could not route this forward.' }
   }
 }

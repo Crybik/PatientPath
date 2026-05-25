@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
-import AuthForm from '@/app/ui/auth-form'
 import { login } from '@/app/actions/auth'
 import { getSession } from '@/app/lib/session'
+import AuthForm from '@/app/ui/auth-form'
 
 export const metadata = {
   title: 'Log in · PatientPath',
@@ -9,9 +9,7 @@ export const metadata = {
 
 export default async function LoginPage() {
   const session = await getSession()
-  if (session) {
-    redirect('/dashboard')
-  }
+  if (session) redirect('/dashboard')
 
   return (
     <AuthForm

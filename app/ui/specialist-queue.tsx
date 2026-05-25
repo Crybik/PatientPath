@@ -1,23 +1,18 @@
 'use client'
 
-import {
-  useActionState,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   acceptForward,
+  completeReferral,
   forwardToAnotherClinic,
+  rejectForward,
 } from '@/app/actions/referrals'
-import type {
-  SerializedHospital,
-  SerializedReferral,
-  SerializedSlot,
-} from '@/app/lib/dashboard-types'
+import type { SerializedHospital, SerializedReferral, SerializedSlot } from '@/app/lib/dashboard-types'
 import { formatDateTime } from '@/app/ui/dashboard-format'
+import { IconCheck, IconClipboard, IconForward, IconX } from '@/app/ui/icons'
+import { AnimatePresence, FadeInUp, motion, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 import { ReferralCard } from '@/app/ui/referral-card'
+import { StatCard } from '@/app/ui/stat-card'
 
 export function SpecialistQueue({
   initialReferrals,
@@ -28,277 +23,219 @@ export function SpecialistQueue({
 }) {
   const [referrals, setReferrals] = useState(initialReferrals)
   const [message, setMessage] = useState<string | null>(null)
+  const [filter, setFilter] = useState<string>('ALL')
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch('/api/forwards', { cache: 'no-store' })
-      const payload = await response.json()
-      if (response.ok) {
-        setReferrals(payload.referrals ?? [])
-        setMessage(null)
-      }
-    } catch {
-      setMessage('Could not refresh specialist queue.')
-    }
+      const res = await fetch('/api/forwards', { cache: 'no-store' })
+      const payload = await res.json()
+      if (res.ok) { setReferrals(payload.referrals ?? []); setMessage(null) }
+    } catch { setMessage('Could not refresh.') }
   }, [])
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      void refresh()
-    }, 5000)
-    return () => window.clearInterval(timer)
+    const t = setInterval(() => void refresh(), 5000)
+    return () => clearInterval(t)
   }, [refresh])
 
+  const filtered = filter === 'ALL' ? referrals : referrals.filter((r) => r.status === filter)
+  const pending = referrals.filter((r) => r.status === 'PENDING').length
+  const accepted = referrals.filter((r) => r.status === 'ACCEPTED').length
+  const completed = referrals.filter((r) => r.status === 'COMPLETED').length
+
+  const filters = ['ALL', 'PENDING', 'ACCEPTED', 'FORWARDED', 'REJECTED', 'COMPLETED']
+
   return (
-    <section id="specialist-queue" className="space-y-5">
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-wide text-accent">
-          Specialist Queue
-        </p>
-        <h1 className="mt-1 text-3xl font-semibold text-primary">
-          Hospital forwards
-        </h1>
+    <div className="space-y-6">
+      <FadeInUp>
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 p-2.5 shadow-md shadow-orange-500/20">
+            <IconClipboard className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-primary">Specialist Queue</h1>
+            <p className="text-sm text-muted">Manage incoming referrals</p>
+          </div>
+        </div>
+      </FadeInUp>
+
+      <div className="grid gap-4 sm:grid-cols-4">
+        <StatCard label="Total" value={referrals.length} />
+        <StatCard label="Pending" value={pending} color="text-amber-400" />
+        <StatCard label="Accepted" value={accepted} color="text-emerald-400" />
+        <StatCard label="Completed" value={completed} color="text-blue-400" />
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2">
+        {filters.map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+              filter === f
+                ? 'bg-accent text-white'
+                : 'border border-border text-muted hover:border-accent/50 hover:text-primary'
+            }`}
+          >
+            {f === 'ALL' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase()}
+          </button>
+        ))}
       </div>
 
       {message && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          {message}
-        </p>
+        <p className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-sm text-warning">{message}</p>
       )}
 
-      {referrals.length === 0 ? (
-        <p className="rounded-lg border border-accent-soft bg-surface p-4 text-sm text-muted">
-          No forwards are waiting for this hospital.
+      {filtered.length === 0 ? (
+        <p className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-muted">
+          No referrals match this filter.
         </p>
       ) : (
-        <div className="space-y-4">
-          {referrals.map((referral) => (
-            <ReferralCard key={referral.id} referral={referral}>
-              <div className="grid gap-5 xl:grid-cols-2">
-                {referral.status === 'PENDING' && (
-                  <AcceptForwardForm referralId={referral.id} onChanged={refresh} />
-                )}
-                <ForwardAgainForm
-                  referral={referral}
-                  hospitals={hospitals}
-                  onChanged={refresh}
-                />
-              </div>
-            </ReferralCard>
+        <StaggerContainer className="space-y-4">
+          {filtered.map((referral) => (
+            <StaggerItem key={referral.id}>
+              <ReferralCard referral={referral}>
+                <div className="grid gap-4 xl:grid-cols-3">
+                  {referral.status === 'PENDING' && (
+                    <>
+                      <AcceptForm referralId={referral.id} onChanged={refresh} />
+                      <RejectForm referralId={referral.id} onChanged={refresh} />
+                    </>
+                  )}
+                  {(referral.status === 'ACCEPTED' || referral.status === 'FORWARDED') && (
+                    <CompleteForm referralId={referral.id} onChanged={refresh} />
+                  )}
+                  <ForwardAgainForm referral={referral} hospitals={hospitals} onChanged={refresh} />
+                </div>
+              </ReferralCard>
+            </StaggerItem>
           ))}
-        </div>
+        </StaggerContainer>
       )}
-    </section>
+    </div>
   )
 }
 
-function AcceptForwardForm({
-  referralId,
-  onChanged,
-}: {
-  referralId: number
-  onChanged: () => Promise<void>
-}) {
+function AcceptForm({ referralId, onChanged }: { referralId: number; onChanged: () => Promise<void> }) {
   const [state, formAction, pending] = useActionState(acceptForward, undefined)
-
-  useEffect(() => {
-    if (state?.success) {
-      void onChanged()
-    }
-  }, [onChanged, state?.success, state?.version])
+  useEffect(() => { if (state?.success) void onChanged() }, [onChanged, state?.success, state?.version])
 
   return (
-    <form action={formAction} className="rounded-lg border border-accent-soft bg-background p-4">
+    <form action={formAction} className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
       <input type="hidden" name="referralId" value={referralId} />
-      <label className="block text-sm font-semibold text-primary-soft">
-        Accept note
-        <textarea
-          name="note"
-          rows={4}
-          required
-          className="mt-1 w-full resize-y rounded-lg border border-accent-soft bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
-          placeholder="Specialist acceptance note."
-        />
+      <label className="block text-xs font-semibold text-emerald-700">
+        <IconCheck className="inline w-4 h-4 mr-1" />Accept
+        <textarea name="note" rows={2} required placeholder="Acceptance note..." className="mt-2 w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent" />
       </label>
-      {state?.message && (
-        <p
-          className={`mt-2 rounded-lg border px-3 py-2 text-sm ${
-            state.success
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-red-200 bg-red-50 text-red-700'
-          }`}
-        >
-          {state.message}
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={pending}
-        className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-surface hover:bg-primary-soft disabled:opacity-60"
-      >
-        {pending ? 'Accepting...' : 'Accept forward'}
+      {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
+      <button type="submit" disabled={pending} className="mt-2 w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+        {pending ? 'Accepting...' : 'Accept'}
       </button>
     </form>
   )
 }
 
-function ForwardAgainForm({
-  referral,
-  hospitals,
-  onChanged,
-}: {
-  referral: SerializedReferral
-  hospitals: SerializedHospital[]
-  onChanged: () => Promise<void>
-}) {
+function RejectForm({ referralId, onChanged }: { referralId: number; onChanged: () => Promise<void> }) {
+  const [state, formAction, pending] = useActionState(rejectForward, undefined)
+  useEffect(() => { if (state?.success) void onChanged() }, [onChanged, state?.success, state?.version])
+
+  return (
+    <form action={formAction} className="rounded-lg border border-red-200 bg-red-50/50 p-3">
+      <input type="hidden" name="referralId" value={referralId} />
+      <label className="block text-xs font-semibold text-red-700">
+        <IconX className="inline w-4 h-4 mr-1" />Reject
+        <textarea name="reason" rows={2} required placeholder="Rejection reason..." className="mt-2 w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent" />
+      </label>
+      {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
+      <button type="submit" disabled={pending} className="mt-2 w-full rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+        {pending ? 'Rejecting...' : 'Reject'}
+      </button>
+    </form>
+  )
+}
+
+function CompleteForm({ referralId, onChanged }: { referralId: number; onChanged: () => Promise<void> }) {
+  const [state, formAction, pending] = useActionState(completeReferral, undefined)
+  useEffect(() => { if (state?.success) void onChanged() }, [onChanged, state?.success, state?.version])
+
+  return (
+    <form action={formAction} className="rounded-lg border border-blue-200 bg-blue-50/50 p-3">
+      <input type="hidden" name="referralId" value={referralId} />
+      <label className="block text-xs font-semibold text-blue-700">
+        Mark Complete
+        <textarea name="note" rows={2} required placeholder="Completion note..." className="mt-2 w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent" />
+      </label>
+      {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
+      <button type="submit" disabled={pending} className="mt-2 w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+        {pending ? 'Completing...' : 'Complete'}
+      </button>
+    </form>
+  )
+}
+
+function ForwardAgainForm({ referral, hospitals, onChanged }: { referral: SerializedReferral; hospitals: SerializedHospital[]; onChanged: () => Promise<void> }) {
   const [selectedClinicId, setSelectedClinicId] = useState(String(referral.clinic.id))
   const [slots, setSlots] = useState<SerializedSlot[]>([])
   const [selectedSlotId, setSelectedSlotId] = useState('')
   const [slotMessage, setSlotMessage] = useState<string | null>(null)
   const [slotLoading, setSlotLoading] = useState(false)
-  const [state, formAction, pending] = useActionState(
-    forwardToAnotherClinic,
-    undefined,
-  )
+  const [state, formAction, pending] = useActionState(forwardToAnotherClinic, undefined)
 
-  const hospital = useMemo(
-    () => hospitals.find((item) => item.id === referral.hospital.id),
-    [hospitals, referral.hospital.id],
-  )
+  const hospital = useMemo(() => hospitals.find((h) => h.id === referral.hospital.id), [hospitals, referral.hospital.id])
   const clinics = hospital?.clinics ?? []
 
-  function resetAvailability() {
-    setSlots([])
-    setSelectedSlotId('')
-    setSlotMessage(null)
-  }
-
-  useEffect(() => {
-    if (state?.success) {
-      void onChanged()
-    }
-  }, [onChanged, state?.success, state?.version])
+  useEffect(() => { if (state?.success) void onChanged() }, [onChanged, state?.success, state?.version])
 
   async function checkAvailability() {
     if (!hospital || !selectedClinicId) return
-    setSlotLoading(true)
-    setSelectedSlotId('')
-    setSlotMessage(null)
+    setSlotLoading(true); setSelectedSlotId(''); setSlotMessage(null)
     try {
-      const response = await fetch(
-        `/api/hospitals/${hospital.id}/clinics/${selectedClinicId}/availability`,
-        { cache: 'no-store' },
-      )
-      const payload = await response.json()
-      if (!response.ok) {
-        setSlots([])
-        setSlotMessage(payload.message ?? 'Could not load availability.')
-        return
-      }
-      const availableSlots = (payload.slots as SerializedSlot[]).filter(
-        (slot) => slot.available > 0,
-      )
-      setSlots(availableSlots)
-      setSlotMessage(
-        availableSlots.length
-          ? `${availableSlots.length} available times found.`
-          : 'No available times for this clinic.',
-      )
-    } catch {
-      setSlots([])
-      setSlotMessage('Could not load availability.')
-    } finally {
-      setSlotLoading(false)
-    }
+      const res = await fetch(`/api/hospitals/${hospital.id}/clinics/${selectedClinicId}/availability`, { cache: 'no-store' })
+      const payload = await res.json()
+      if (!res.ok) { setSlots([]); setSlotMessage(payload.message ?? 'Error'); return }
+      const available = (payload.slots as SerializedSlot[]).filter((s) => s.available > 0)
+      setSlots(available)
+      setSlotMessage(available.length ? `${available.length} available` : 'None available')
+    } catch { setSlots([]); setSlotMessage('Error') }
+    finally { setSlotLoading(false) }
   }
 
   return (
-    <form action={formAction} className="rounded-lg border border-accent-soft bg-background p-4">
+    <form action={formAction} className="rounded-lg border border-border bg-surface-elevated p-3">
       <input type="hidden" name="referralId" value={referral.id} />
       <input type="hidden" name="slotId" value={selectedSlotId} />
+      <p className="text-xs font-semibold text-accent"><IconForward className="inline w-4 h-4 mr-1" />Forward Again</p>
 
-      <label className="block text-sm font-semibold text-primary-soft">
-        Route to clinic
-        <select
-          name="clinicId"
-          value={selectedClinicId}
-          onChange={(event) => {
-            setSelectedClinicId(event.target.value)
-            resetAvailability()
-          }}
-          className="mt-1 w-full rounded-lg border border-accent-soft bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
-        >
-          {clinics.map((clinic) => (
-            <option key={clinic.id} value={clinic.id}>
-              {clinic.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <button
-        type="button"
-        onClick={checkAvailability}
-        disabled={slotLoading || !selectedClinicId}
-        className="mt-3 rounded-lg border border-primary px-4 py-2 text-sm font-semibold text-primary hover:bg-accent-soft/35 disabled:opacity-60"
+      <select
+        name="clinicId"
+        value={selectedClinicId}
+        onChange={(e) => { setSelectedClinicId(e.target.value); setSlots([]); setSelectedSlotId('') }}
+        className="mt-2 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent"
       >
-        {slotLoading ? 'Checking...' : 'Check availability'}
+        {clinics.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      <button type="button" onClick={checkAvailability} disabled={slotLoading} className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-primary disabled:opacity-50">
+        {slotLoading ? '...' : 'Check slots'}
       </button>
-      {slotMessage && <p className="mt-2 text-sm text-muted">{slotMessage}</p>}
+      {slotMessage && <p className="mt-1 text-xs text-muted">{slotMessage}</p>}
 
       {slots.length > 0 && (
-        <div className="mt-3 grid gap-2">
-          {slots.map((slot) => (
-            <label
-              key={slot.id}
-              className="cursor-pointer rounded-lg border border-accent-soft bg-surface p-3 text-sm text-primary-soft has-[:checked]:border-accent has-[:checked]:bg-accent-soft/30"
-            >
-              <input
-                type="radio"
-                name="slotPicker"
-                checked={selectedSlotId === String(slot.id)}
-                onChange={() => setSelectedSlotId(String(slot.id))}
-                className="sr-only"
-              />
-              <span className="font-semibold text-primary">
-                {formatDateTime(slot.startsAt)}
-              </span>
-              <span className="mt-1 block text-xs text-muted">
-                {slot.available} spot{slot.available === 1 ? '' : 's'} open
-              </span>
+        <div className="mt-2 grid gap-1">
+          {slots.slice(0, 4).map((slot) => (
+            <label key={slot.id} className={`cursor-pointer rounded-lg border p-2 text-xs ${selectedSlotId === String(slot.id) ? 'border-accent bg-accent-soft' : 'border-border'}`}>
+              <input type="radio" name="slotPicker" checked={selectedSlotId === String(slot.id)} onChange={() => setSelectedSlotId(String(slot.id))} className="sr-only" />
+              {formatDateTime(slot.startsAt)} ({slot.available} open)
             </label>
           ))}
         </div>
       )}
 
-      <label className="mt-3 block text-sm font-semibold text-primary-soft">
-        Routing note
-        <textarea
-          name="note"
-          rows={4}
-          required
-          className="mt-1 w-full resize-y rounded-lg border border-accent-soft bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
-          placeholder="Reason for forwarding to this clinic and selected time."
-        />
-      </label>
-
-      {state?.message && (
-        <p
-          className={`mt-2 rounded-lg border px-3 py-2 text-sm ${
-            state.success
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-red-200 bg-red-50 text-red-700'
-          }`}
-        >
-          {state.message}
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={!selectedSlotId || pending}
-        className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-surface hover:bg-primary-soft disabled:opacity-60"
-      >
-        {pending ? 'Forwarding...' : 'Forward again'}
+      <textarea name="note" rows={2} required placeholder="Routing note..." className="mt-2 w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent" />
+      {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
+      <button type="submit" disabled={!selectedSlotId || pending} className="mt-2 w-full rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+        {pending ? 'Forwarding...' : 'Forward'}
       </button>
     </form>
   )

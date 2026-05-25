@@ -5,7 +5,10 @@ import type {
   PatientLookupResponse,
   SerializedClinic,
   SerializedHospital,
+  SerializedLabTest,
+  SerializedNotification,
   SerializedPatient,
+  SerializedPrescription,
   SerializedReferral,
   SerializedSlot,
   SerializedVisit,
@@ -57,10 +60,6 @@ type PatientWithUser = Prisma.PatientProfileGetPayload<{
 
 type VisitRecord = Prisma.PatientVisitGetPayload<Record<string, never>>
 
-type HospitalWithClinics = Prisma.HospitalGetPayload<{
-  include: { clinics: { orderBy: { name: 'asc' } } }
-}>
-
 function iso(value: Date | null | undefined) {
   return value ? value.toISOString() : null
 }
@@ -108,6 +107,8 @@ export function serializePatient(patient: PatientWithUser): SerializedPatient {
     uniId: patient.uniId,
     gender: patient.gender,
     dob: patient.dob.toISOString(),
+    phoneNumber: patient.phoneNumber,
+    faculty: patient.faculty,
   }
 }
 
@@ -124,7 +125,9 @@ export function serializeVisit(visit: VisitRecord): SerializedVisit {
 }
 
 export function serializeHospital(
-  hospital: HospitalWithClinics,
+  hospital: Prisma.HospitalGetPayload<{
+    include: { clinics: { orderBy: { name: 'asc' } } }
+  }>,
 ): SerializedHospital {
   return {
     id: hospital.id,
@@ -162,6 +165,7 @@ export function serializeReferral(
     status: referral.status,
     doctorNote: referral.doctorNote,
     specialistNote: referral.specialistNote,
+    rejectionReason: referral.rejectionReason,
     scheduledAt: iso(referral.scheduledAt),
     acceptedAt: iso(referral.acceptedAt),
     createdAt: referral.createdAt.toISOString(),
@@ -196,6 +200,61 @@ export function serializeReferral(
     })),
   }
 }
+
+export function serializeLabTest(
+  test: Prisma.LabTestGetPayload<{
+    include: {
+      patient: true
+      requestedBy: { include: { staffProfile: true } }
+      labStaff: { include: { staffProfile: true } }
+    }
+  }>,
+): SerializedLabTest {
+  return {
+    id: test.id,
+    testType: test.testType,
+    status: test.status,
+    result: test.result,
+    requestDate: test.requestDate.toISOString(),
+    resultDate: iso(test.resultDate),
+    patientName: test.patient.fullName,
+    patientUniId: test.patient.uniId,
+    requestedByName:
+      test.requestedBy.staffProfile?.fullName ?? test.requestedBy.username,
+    labStaffName: test.labStaff?.staffProfile?.fullName ?? test.labStaff?.username ?? null,
+    referralId: test.referralId,
+  }
+}
+
+export function serializePrescription(
+  rx: Prisma.PrescriptionGetPayload<{
+    include: {
+      patient: true
+      requestedBy: { include: { staffProfile: true } }
+      pharmacyStaff: { include: { staffProfile: true } }
+    }
+  }>,
+): SerializedPrescription {
+  return {
+    id: rx.id,
+    medicationName: rx.medicationName,
+    dosage: rx.dosage,
+    frequency: rx.frequency,
+    duration: rx.duration,
+    isDispensed: rx.isDispensed,
+    dispensedDate: iso(rx.dispensedDate),
+    createdAt: rx.createdAt.toISOString(),
+    patientName: rx.patient.fullName,
+    patientUniId: rx.patient.uniId,
+    requestedByName:
+      rx.requestedBy.staffProfile?.fullName ?? rx.requestedBy.username,
+    pharmacyStaffName:
+      rx.pharmacyStaff?.staffProfile?.fullName ?? rx.pharmacyStaff?.username ?? null,
+    referralId: rx.referralId,
+  }
+}
+
+// ─── Data Fetchers ───────────────────────────────────────────────────────────
 
 export async function getHospitalsWithClinics() {
   await ready()
@@ -256,9 +315,7 @@ export async function getPatientDashboard(userId: number) {
     include: { user: { select: { username: true } } },
   })
 
-  if (!patient) {
-    return null
-  }
+  if (!patient) return null
 
   const [visits, referrals] = await Promise.all([
     prisma.patientVisit.findMany({
@@ -296,9 +353,7 @@ export async function getSpecialistReferrals(userId: number) {
     select: { hospitalId: true },
   })
 
-  if (!staff?.hospitalId) {
-    return []
-  }
+  if (!staff?.hospitalId) return []
 
   const referrals = await prisma.referral.findMany({
     where: { hospitalId: staff.hospitalId },
@@ -315,4 +370,101 @@ export async function getAllReferrals() {
     include: referralInclude,
   })
   return referrals.map(serializeReferral)
+}
+
+// ─── Lab Tests ───────────────────────────────────────────────────────────────
+
+export async function getLabTestsForStaff(userId: number) {
+  await ready()
+  const staff = await prisma.staffProfile.findUnique({
+    where: { userId },
+    select: { hospitalId: true },
+  })
+
+  const tests = await prisma.labTest.findMany({
+    orderBy: { requestDate: 'desc' },
+    include: {
+      patient: true,
+      requestedBy: { include: { staffProfile: true } },
+      labStaff: { include: { staffProfile: true } },
+    },
+  })
+  return tests.map(serializeLabTest)
+}
+
+export async function getAllLabTests() {
+  await ready()
+  const tests = await prisma.labTest.findMany({
+    orderBy: { requestDate: 'desc' },
+    include: {
+      patient: true,
+      requestedBy: { include: { staffProfile: true } },
+      labStaff: { include: { staffProfile: true } },
+    },
+  })
+  return tests.map(serializeLabTest)
+}
+
+// ─── Prescriptions ──────────────────────────────────────────────────────────
+
+export async function getPrescriptionsForStaff(userId: number) {
+  await ready()
+  const prescriptions = await prisma.prescription.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: {
+      patient: true,
+      requestedBy: { include: { staffProfile: true } },
+      pharmacyStaff: { include: { staffProfile: true } },
+    },
+  })
+  return prescriptions.map(serializePrescription)
+}
+
+export async function getAllPrescriptions() {
+  await ready()
+  const prescriptions = await prisma.prescription.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: {
+      patient: true,
+      requestedBy: { include: { staffProfile: true } },
+      pharmacyStaff: { include: { staffProfile: true } },
+    },
+  })
+  return prescriptions.map(serializePrescription)
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+export async function getNotifications(userId: number): Promise<SerializedNotification[]> {
+  await ready()
+  const notifications = await prisma.notification.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  })
+  return notifications.map((n) => ({
+    id: n.id,
+    message: n.message,
+    type: n.type,
+    isRead: n.isRead,
+    createdAt: n.createdAt.toISOString(),
+  }))
+}
+
+export async function getUnreadNotificationCount(userId: number): Promise<number> {
+  await ready()
+  return prisma.notification.count({
+    where: { userId, isRead: false },
+  })
+}
+
+export async function createNotification(
+  userId: number,
+  message: string,
+  type: string,
+) {
+  await ready()
+  return prisma.notification.create({
+    data: { userId, message, type },
+  })
 }

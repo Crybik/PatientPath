@@ -1,155 +1,52 @@
 import { redirect } from 'next/navigation'
 import { UserRole } from '@/app/generated/prisma'
+import { getAdminStats } from '@/app/actions/admin'
 import {
-  getAllReferrals,
   getDoctorReferrals,
-  getHospitalsWithClinics,
+  getLabTestsForStaff,
   getPatientDashboard,
+  getPrescriptionsForStaff,
   getSpecialistReferrals,
 } from '@/app/lib/clinical-data'
-import type { DashboardRole, SerializedReferral } from '@/app/lib/dashboard-types'
 import { getSession } from '@/app/lib/session'
-import { DashboardShell } from '@/app/ui/dashboard-shell'
-import { DoctorForwardNote } from '@/app/ui/doctor-forward-note'
-import { PatientTracker } from '@/app/ui/patient-tracker'
-import { ReferralCard } from '@/app/ui/referral-card'
-import { SpecialistQueue } from '@/app/ui/specialist-queue'
+import { AdminOverviewCharts } from '@/app/ui/admin-charts'
+import { DashboardOverview } from '@/app/ui/dashboard-overview'
 
-export const metadata = {
-  title: 'Dashboard - PatientPath',
-}
-
-const nav = {
-  [UserRole.DOCTOR]: [
-    { href: '#forward-note', label: 'Forward Note' },
-    { href: '#patient-forwards', label: 'Patient Forwards' },
-    { href: '#doctor-history', label: 'My History' },
-  ],
-  [UserRole.SPECIALIST]: [
-    { href: '#specialist-queue', label: 'Referral Queue' },
-    { href: '#specialist-queue', label: 'Accept' },
-    { href: '#specialist-queue', label: 'Forward Again' },
-  ],
-  [UserRole.PATIENT]: [
-    { href: '#patient-dashboard', label: 'Main' },
-    { href: '#patient-forwards', label: 'Forwards' },
-    { href: '#visit-history', label: 'Visit History' },
-  ],
-  [UserRole.SUPER_ADMIN]: [
-    { href: '#admin-overview', label: 'Overview' },
-    { href: '#all-forwards', label: 'All Forwards' },
-  ],
-}
+export const metadata = { title: 'Dashboard - PatientPath' }
 
 export default async function DashboardPage() {
   const session = await getSession()
-  if (!session) {
-    redirect('/login')
-  }
+  if (!session) redirect('/login')
 
-  let content: React.ReactNode
+  if (session.role === UserRole.SUPER_ADMIN) {
+    const stats = await getAdminStats()
+    return <AdminOverviewCharts stats={stats} />
+  }
 
   if (session.role === UserRole.DOCTOR) {
-    const [hospitals, referrals] = await Promise.all([
-      getHospitalsWithClinics(),
-      getDoctorReferrals(session.userId),
-    ])
-    content = <DoctorForwardNote hospitals={hospitals} recentReferrals={referrals} />
-  } else if (session.role === UserRole.SPECIALIST) {
-    const [hospitals, referrals] = await Promise.all([
-      getHospitalsWithClinics(),
-      getSpecialistReferrals(session.userId),
-    ])
-    content = <SpecialistQueue hospitals={hospitals} initialReferrals={referrals} />
-  } else if (session.role === UserRole.PATIENT) {
-    const dashboard = await getPatientDashboard(session.userId)
-    content = dashboard ? (
-      <PatientTracker
-        patient={dashboard.patient}
-        visits={dashboard.visits}
-        initialReferrals={dashboard.referrals}
-      />
-    ) : (
-      <MissingProfile role="patient" />
-    )
-  } else {
-    content = <AdminOverview referrals={await getAllReferrals()} />
+    const referrals = await getDoctorReferrals(session.userId)
+    return <DashboardOverview role="DOCTOR" stats={{ total: referrals.length, pending: referrals.filter(r => r.status === 'PENDING').length, accepted: referrals.filter(r => r.status === 'ACCEPTED').length, completed: referrals.filter(r => r.status === 'COMPLETED').length }} />
   }
 
-  return (
-    <DashboardShell
-      username={session.username}
-      role={session.role as DashboardRole}
-      nav={nav[session.role]}
-    >
-      {content}
-    </DashboardShell>
-  )
-}
+  if (session.role === UserRole.SPECIALIST) {
+    const referrals = await getSpecialistReferrals(session.userId)
+    return <DashboardOverview role="SPECIALIST" stats={{ total: referrals.length, pending: referrals.filter(r => r.status === 'PENDING').length, accepted: referrals.filter(r => r.status === 'ACCEPTED').length, completed: referrals.filter(r => r.status === 'COMPLETED').length }} />
+  }
 
-function MissingProfile({ role }: { role: string }) {
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-900">
-      <h1 className="text-xl font-semibold">Missing {role} profile</h1>
-      <p className="mt-2 text-sm">
-        This account can log in, but it is not connected to a seeded clinical
-        profile yet.
-      </p>
-    </div>
-  )
-}
+  if (session.role === UserRole.PATIENT) {
+    const data = await getPatientDashboard(session.userId)
+    return <DashboardOverview role="PATIENT" stats={{ forwards: data?.referrals.length ?? 0, visits: data?.visits.length ?? 0, latest: data?.referrals[0]?.status ?? 'None' }} patientName={data?.patient.fullName} />
+  }
 
-function AdminOverview({ referrals }: { referrals: SerializedReferral[] }) {
-  const pending = referrals.filter((referral) => referral.status === 'PENDING').length
-  const accepted = referrals.filter(
-    (referral) => referral.status === 'ACCEPTED',
-  ).length
-  const forwarded = referrals.filter(
-    (referral) => referral.status === 'FORWARDED',
-  ).length
+  if (session.role === UserRole.LAB_STAFF) {
+    const tests = await getLabTestsForStaff(session.userId)
+    return <DashboardOverview role="LAB_STAFF" stats={{ total: tests.length, pending: tests.filter(t => t.status === 'PENDING').length, completed: tests.filter(t => t.status === 'COMPLETED').length }} />
+  }
 
-  return (
-    <div className="space-y-8">
-      <section id="admin-overview" className="space-y-5">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-accent">
-            Admin Overview
-          </p>
-          <h1 className="mt-1 text-3xl font-semibold text-primary">
-            PatientPath referral activity
-          </h1>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-4">
-          <Stat label="Total" value={referrals.length} />
-          <Stat label="Pending" value={pending} />
-          <Stat label="Accepted" value={accepted} />
-          <Stat label="Forwarded" value={forwarded} />
-        </div>
-      </section>
+  if (session.role === UserRole.PHARMACY_STAFF) {
+    const rxs = await getPrescriptionsForStaff(session.userId)
+    return <DashboardOverview role="PHARMACY_STAFF" stats={{ total: rxs.length, pending: rxs.filter(r => !r.isDispensed).length, dispensed: rxs.filter(r => r.isDispensed).length }} />
+  }
 
-      <section id="all-forwards" className="space-y-4">
-        <h2 className="text-xl font-semibold text-primary">All forwards</h2>
-        {referrals.length === 0 ? (
-          <p className="rounded-lg border border-accent-soft bg-surface p-4 text-sm text-muted">
-            No forwards exist yet.
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {referrals.map((referral) => (
-              <ReferralCard key={referral.id} referral={referral} />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-accent-soft bg-surface p-4 shadow-sm">
-      <p className="text-sm text-muted">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-primary">{value}</p>
-    </div>
-  )
+  return <DashboardOverview role="PATIENT" stats={{}} />
 }

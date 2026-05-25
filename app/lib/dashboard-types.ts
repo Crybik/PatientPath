@@ -3,6 +3,8 @@ export type DashboardRole =
   | 'PATIENT'
   | 'DOCTOR'
   | 'SPECIALIST'
+  | 'LAB_STAFF'
+  | 'PHARMACY_STAFF'
 
 export type SerializedPatient = {
   id: number
@@ -11,6 +13,8 @@ export type SerializedPatient = {
   uniId: string
   gender: 'MALE' | 'FEMALE'
   dob: string
+  phoneNumber: string | null
+  faculty: string | null
 }
 
 export type SerializedVisit = {
@@ -52,7 +56,7 @@ export type SerializedSlot = {
 
 export type SerializedReferralEvent = {
   id: number
-  type: 'CREATED' | 'ACCEPTED' | 'FORWARDED'
+  type: 'CREATED' | 'ACCEPTED' | 'FORWARDED' | 'REJECTED' | 'COMPLETED'
   note: string | null
   actorName: string
   actorRole: DashboardRole | null
@@ -65,9 +69,10 @@ export type SerializedReferralEvent = {
 
 export type SerializedReferral = {
   id: number
-  status: 'PENDING' | 'ACCEPTED' | 'FORWARDED'
+  status: 'PENDING' | 'ACCEPTED' | 'FORWARDED' | 'REJECTED' | 'IN_PROGRESS' | 'COMPLETED'
   doctorNote: string
   specialistNote: string | null
+  rejectionReason: string | null
   scheduledAt: string | null
   acceptedAt: string | null
   createdAt: string
@@ -85,6 +90,44 @@ export type SerializedReferral = {
   clinic: SerializedClinic
   slot: SerializedSlot | null
   events: SerializedReferralEvent[]
+}
+
+export type SerializedLabTest = {
+  id: number
+  testType: string
+  status: string
+  result: string | null
+  requestDate: string
+  resultDate: string | null
+  patientName: string
+  patientUniId: string
+  requestedByName: string
+  labStaffName: string | null
+  referralId: number | null
+}
+
+export type SerializedPrescription = {
+  id: number
+  medicationName: string
+  dosage: string
+  frequency: string
+  duration: string
+  isDispensed: boolean
+  dispensedDate: string | null
+  createdAt: string
+  patientName: string
+  patientUniId: string
+  requestedByName: string
+  pharmacyStaffName: string | null
+  referralId: number | null
+}
+
+export type SerializedNotification = {
+  id: number
+  message: string
+  type: string
+  isRead: boolean
+  createdAt: string
 }
 
 export type PatientLookupResponse = {

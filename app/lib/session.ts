@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { USER_ROLES, type UserRole } from '@/app/lib/roles'
 
 const SESSION_COOKIE = 'session'
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7 // 7 days
+const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 
 function getKey() {
   const secret = process.env.SESSION_SECRET

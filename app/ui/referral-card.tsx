@@ -1,12 +1,10 @@
-import Image from 'next/image'
-import type { SerializedReferral } from '@/app/lib/dashboard-types'
-import { formatDateTime, statusLabel } from '@/app/ui/dashboard-format'
+'use client'
 
-const statusClass: Record<SerializedReferral['status'], string> = {
-  PENDING: 'border-amber-200 bg-amber-50 text-amber-800',
-  ACCEPTED: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  FORWARDED: 'border-sky-200 bg-sky-50 text-sky-800',
-}
+import Image from 'next/image'
+import { useState } from 'react'
+import type { SerializedReferral } from '@/app/lib/dashboard-types'
+import { formatDateTime, statusColor, statusLabel } from '@/app/ui/dashboard-format'
+import { AnimatePresence, motion } from '@/app/ui/motion'
 
 export function ReferralCard({
   referral,
@@ -15,109 +13,141 @@ export function ReferralCard({
   referral: SerializedReferral
   children?: React.ReactNode
 }) {
+  const [expanded, setExpanded] = useState(false)
+
   return (
-    <article className="rounded-lg border border-accent-soft bg-surface p-5 shadow-sm">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 gap-3">
-          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-accent-soft bg-background">
-            {referral.hospital.logoPath ? (
-              <Image
-                src={referral.hospital.logoPath}
-                alt={`${referral.hospital.name} logo`}
-                fill
-                sizes="56px"
-                className="object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-sm font-semibold text-primary">
-                {referral.hospital.shortName}
-              </div>
-            )}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-semibold text-primary">
-                {referral.patient.fullName}
-              </h3>
-              <span
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass[referral.status]}`}
-              >
-                {statusLabel(referral.status)}
-              </span>
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl border border-border bg-surface shadow-sm overflow-hidden transition-all hover:shadow-md"
+    >
+      <div className="p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-border bg-surface-elevated">
+              {referral.hospital.logoPath ? (
+                <Image src={referral.hospital.logoPath} alt={referral.hospital.name} fill sizes="40px" className="object-cover" />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs font-bold text-accent">
+                  {referral.hospital.shortName}
+                </div>
+              )}
             </div>
-            <p className="mt-1 text-sm text-muted">
-              {referral.hospital.name} - {referral.clinic.name}
-            </p>
-            <p className="mt-1 text-sm font-medium text-primary-soft">
-              {formatDateTime(referral.scheduledAt)}
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-accent-soft bg-background px-3 py-2 text-sm text-primary-soft">
-          Uni ID <span className="font-semibold">{referral.patient.uniId}</span>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Doctor note
-          </p>
-          <p className="mt-1 whitespace-pre-wrap text-sm text-primary-soft">
-            {referral.doctorNote}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Specialist note
-          </p>
-          <p className="mt-1 whitespace-pre-wrap text-sm text-primary-soft">
-            {referral.specialistNote ?? 'No specialist note yet.'}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-          Timeline
-        </p>
-        <div className="mt-3 space-y-3">
-          {referral.events.map((event) => (
-            <div key={event.id} className="flex gap-3">
-              <div className="mt-1 h-2.5 w-2.5 rounded-full bg-accent" />
-              <div>
-                <p className="text-sm font-semibold text-primary">
-                  {event.type === 'CREATED'
-                    ? 'Forward created'
-                    : event.type === 'ACCEPTED'
-                      ? 'Accepted by specialist'
-                      : 'Forwarded to another clinic'}
-                </p>
-                <p className="text-xs text-muted">
-                  {event.actorName} - {formatDateTime(event.createdAt)}
-                </p>
-                {(event.toClinicName || event.slotStartsAt) && (
-                  <p className="mt-1 text-sm text-primary-soft">
-                    {event.fromClinicName ? `${event.fromClinicName} to ` : ''}
-                    {event.toClinicName ?? referral.clinic.name}
-                    {event.slotStartsAt
-                      ? ` - ${formatDateTime(event.slotStartsAt)}`
-                      : ''}
-                  </p>
-                )}
-                {event.note && (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-primary-soft">
-                    {event.note}
-                  </p>
-                )}
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-semibold text-primary">
+                  {referral.patient.fullName}
+                </h3>
+                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusColor(referral.status)}`}>
+                  {statusLabel(referral.status)}
+                </span>
               </div>
+              <p className="mt-0.5 text-sm text-muted">
+                {referral.hospital.name} → {referral.clinic.name}
+              </p>
+              {referral.scheduledAt && (
+                <p className="mt-1 text-xs text-primary-soft">
+                  Scheduled: {formatDateTime(referral.scheduledAt)}
+                </p>
+              )}
             </div>
-          ))}
+          </div>
+
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="self-start rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted transition-all hover:bg-surface-elevated hover:text-primary hover:border-accent/30"
+          >
+            {expanded ? 'Collapse' : 'Details'}
+          </button>
         </div>
+
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="overflow-hidden"
+            >
+              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-lg bg-surface-elevated p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Doctor note</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-primary-soft leading-relaxed">
+                    {referral.doctorNote}
+                  </p>
+                  <p className="mt-2 text-xs text-muted">By {referral.doctorName}</p>
+                </div>
+                <div className="rounded-lg bg-surface-elevated p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Specialist note</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-primary-soft leading-relaxed">
+                    {referral.specialistNote ?? 'No specialist note yet.'}
+                  </p>
+                  {referral.specialistName && (
+                    <p className="mt-2 text-xs text-muted">By {referral.specialistName}</p>
+                  )}
+                </div>
+              </div>
+
+              {referral.rejectionReason && (
+                <div className="mt-4 rounded-lg border border-danger/20 bg-danger/5 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-danger">Rejection reason</p>
+                  <p className="mt-1 text-sm text-primary-soft">{referral.rejectionReason}</p>
+                </div>
+              )}
+
+              {/* Timeline */}
+              <div className="mt-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Timeline</p>
+                <div className="mt-3 space-y-3">
+                  {referral.events.map((event, idx) => (
+                    <div key={event.id} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className={`h-2.5 w-2.5 rounded-full ${
+                          event.type === 'REJECTED' ? 'bg-danger' :
+                          event.type === 'COMPLETED' ? 'bg-success' :
+                          'bg-accent'
+                        }`} />
+                        {idx < referral.events.length - 1 && (
+                          <div className="mt-1 w-px flex-1 bg-border" />
+                        )}
+                      </div>
+                      <div className="pb-3">
+                        <p className="text-sm font-medium text-primary">
+                          {event.type === 'CREATED' && 'Forward created'}
+                          {event.type === 'ACCEPTED' && 'Accepted by specialist'}
+                          {event.type === 'FORWARDED' && 'Forwarded to another clinic'}
+                          {event.type === 'REJECTED' && 'Rejected'}
+                          {event.type === 'COMPLETED' && 'Completed'}
+                        </p>
+                        <p className="text-xs text-muted">
+                          {event.actorName} · {formatDateTime(event.createdAt)}
+                        </p>
+                        {event.toClinicName && (
+                          <p className="mt-1 text-xs text-primary-soft">
+                            {event.fromClinicName ? `${event.fromClinicName} → ` : ''}
+                            {event.toClinicName}
+                          </p>
+                        )}
+                        {event.note && (
+                          <p className="mt-1 text-sm text-muted">{event.note}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {children && <div className="mt-5 border-t border-accent-soft pt-5">{children}</div>}
-    </article>
+      {children && (
+        <div className="border-t border-border bg-surface-elevated/50 p-5">
+          {children}
+        </div>
+      )}
+    </motion.article>
   )
 }

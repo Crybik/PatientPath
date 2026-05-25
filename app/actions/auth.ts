@@ -13,15 +13,17 @@ const UsernamePassword = z.object({
     .min(3, 'Username must be at least 3 characters.')
     .max(64, 'Username must be at most 64 characters.')
     .regex(/^[a-zA-Z0-9_.-]+$/, 'Only letters, numbers, "_", ".", "-" allowed.')
-    .trim(),
+    .trim()
+    .transform((v) => v.toLowerCase()),
   password: z
     .string()
-    .min(8, 'Password must be at least 8 characters.')
+    .min(4, 'Password must be at least 4 characters.')
     .max(200, 'Password is too long.'),
 })
 
 const RegisterSchema = UsernamePassword.extend({
   role: z.enum(REGISTERABLE_ROLES),
+  email: z.string().email('Invalid email.').optional().or(z.literal('')),
 })
 
 export type AuthFormState =
@@ -30,6 +32,7 @@ export type AuthFormState =
         username?: string[]
         password?: string[]
         role?: string[]
+        email?: string[]
       }
       message?: string
     }
@@ -43,18 +46,20 @@ export async function register(
     username: formData.get('username'),
     password: formData.get('password'),
     role: formData.get('role'),
+    email: formData.get('email') || '',
   })
   if (!parsed.success) {
     return { errors: z.flattenError(parsed.error).fieldErrors }
   }
 
-  const { username, password, role } = parsed.data
+  const { username, password, role, email } = parsed.data
 
   try {
     await ready()
 
-    const existing = await prisma.user.findUnique({
-      where: { username },
+    // Case-insensitive check
+    const existing = await prisma.user.findFirst({
+      where: { username: { equals: username, mode: 'insensitive' } },
       select: { id: true },
     })
     if (existing) {
@@ -63,7 +68,12 @@ export async function register(
 
     const passwordHash = await bcrypt.hash(password, 10)
     const user = await prisma.user.create({
-      data: { username, passwordHash, role },
+      data: {
+        username,
+        passwordHash,
+        role,
+        email: email || null,
+      },
       select: { id: true, username: true, role: true },
     })
 
@@ -85,7 +95,6 @@ export async function login(
     password: formData.get('password'),
   })
   if (!parsed.success) {
-    // Don't leak which field was wrong on login.
     return { message: 'Invalid username or password.' }
   }
 
@@ -94,12 +103,17 @@ export async function login(
   try {
     await ready()
 
-    const user = await prisma.user.findUnique({
-      where: { username },
-      select: { id: true, username: true, passwordHash: true, role: true },
+    // Case-insensitive login
+    const user = await prisma.user.findFirst({
+      where: { username: { equals: username, mode: 'insensitive' } },
+      select: { id: true, username: true, passwordHash: true, role: true, isActive: true },
     })
     if (!user) {
       return { message: 'Invalid username or password.' }
+    }
+
+    if (!user.isActive) {
+      return { message: 'This account has been deactivated. Contact an administrator.' }
     }
 
     const ok = await bcrypt.compare(password, user.passwordHash)

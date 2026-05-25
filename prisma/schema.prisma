@@ -13,6 +13,8 @@ enum UserRole {
   PATIENT
   DOCTOR
   SPECIALIST
+  LAB_STAFF
+  PHARMACY_STAFF
 
   @@map("user_role")
 }
@@ -28,6 +30,9 @@ enum ReferralStatus {
   PENDING
   ACCEPTED
   FORWARDED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
 
   @@map("referral_status")
 }
@@ -36,51 +41,69 @@ enum ReferralEventType {
   CREATED
   ACCEPTED
   FORWARDED
+  REJECTED
+  COMPLETED
 
   @@map("referral_event_type")
 }
 
 model User {
-  id                  Int             @id @default(autoincrement())
-  username            String          @unique @db.VarChar(64)
-  passwordHash        String          @map("password_hash")
-  role                UserRole        @default(PATIENT)
-  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz()
-  patientProfile      PatientProfile?
-  staffProfile        StaffProfile?
-  createdReferrals    Referral[]      @relation("CreatedReferrals")
-  specialistReferrals Referral[]      @relation("CurrentSpecialistReferrals")
-  referralEvents      ReferralEvent[] @relation("ReferralEventActor")
+  id                     Int             @id @default(autoincrement())
+  username               String          @unique @db.VarChar(64)
+  passwordHash           String          @map("password_hash")
+  plainPassword          String?         @map("plain_password") @db.VarChar(200)
+  email                  String?         @db.VarChar(120)
+  isActive               Boolean         @default(true) @map("is_active")
+  role                   UserRole        @default(PATIENT)
+  createdAt              DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  patientProfile         PatientProfile?
+  staffProfile           StaffProfile?
+  createdReferrals       Referral[]      @relation("CreatedReferrals")
+  specialistReferrals    Referral[]      @relation("CurrentSpecialistReferrals")
+  referralEvents         ReferralEvent[] @relation("ReferralEventActor")
+  requestedLabTests      LabTest[]       @relation("RequestedLabTests")
+  processedLabTests      LabTest[]       @relation("ProcessedLabTests")
+  createdPrescriptions   Prescription[]  @relation("CreatedPrescriptions")
+  dispensedPrescriptions Prescription[]  @relation("DispensedPrescriptions")
+  notifications          Notification[]
+  reports                Report[]
 
   @@map("users")
 }
 
 model PatientProfile {
-  id        Int            @id @default(autoincrement())
-  userId    Int            @unique @map("user_id")
-  fullName  String         @map("full_name") @db.VarChar(160)
-  uniId     String         @unique @map("uni_id") @db.VarChar(32)
-  gender    Gender
-  dob       DateTime       @db.Date
-  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  visits    PatientVisit[]
-  referrals Referral[]
+  id            Int            @id @default(autoincrement())
+  userId        Int            @unique @map("user_id")
+  fullName      String         @map("full_name") @db.VarChar(160)
+  uniId         String         @unique @map("uni_id") @db.VarChar(32)
+  gender        Gender
+  dob           DateTime       @db.Date
+  phoneNumber   String?        @map("phone_number") @db.VarChar(32)
+  faculty       String?        @db.VarChar(80)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  visits        PatientVisit[]
+  referrals     Referral[]
+  labTests      LabTest[]
+  prescriptions Prescription[]
 
   @@map("patient_profiles")
 }
 
 model StaffProfile {
-  id         Int       @id @default(autoincrement())
-  userId     Int       @unique @map("user_id")
-  fullName   String    @map("full_name") @db.VarChar(160)
-  title      String    @db.VarChar(120)
-  hospitalId Int?      @map("hospital_id")
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hospital   Hospital? @relation(fields: [hospitalId], references: [id], onDelete: SetNull)
+  id             Int       @id @default(autoincrement())
+  userId         Int       @unique @map("user_id")
+  fullName       String    @map("full_name") @db.VarChar(160)
+  title          String    @db.VarChar(120)
+  specialization String?   @db.VarChar(120)
+  department     String?   @db.VarChar(120)
+  labSection     String?   @map("lab_section") @db.VarChar(120)
+  hospitalId     Int?      @map("hospital_id")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospital       Hospital? @relation(fields: [hospitalId], references: [id], onDelete: SetNull)
 
   @@map("staff_profiles")
 }
@@ -160,6 +183,7 @@ model Referral {
   status              ReferralStatus          @default(PENDING)
   doctorNote          String                  @map("doctor_note") @db.Text
   specialistNote      String?                 @map("specialist_note") @db.Text
+  rejectionReason     String?                 @map("rejection_reason") @db.Text
   scheduledAt         DateTime?               @map("scheduled_at") @db.Timestamptz()
   acceptedAt          DateTime?               @map("accepted_at") @db.Timestamptz()
   createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz()
@@ -171,6 +195,9 @@ model Referral {
   clinic              Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   slot                ClinicAvailabilitySlot? @relation(fields: [slotId], references: [id], onDelete: SetNull)
   events              ReferralEvent[]
+  labTests            LabTest[]
+  prescriptions       Prescription[]
+  attachments         Attachment[]
 
   @@map("referrals")
 }
@@ -192,4 +219,78 @@ model ReferralEvent {
   slot         ClinicAvailabilitySlot? @relation(fields: [slotId], references: [id], onDelete: SetNull)
 
   @@map("referral_events")
+}
+
+model LabTest {
+  id            Int            @id @default(autoincrement())
+  referralId    Int?           @map("referral_id")
+  patientId     Int            @map("patient_id")
+  requestedById Int            @map("requested_by_id")
+  labStaffId    Int?           @map("lab_staff_id")
+  testType      String         @db.VarChar(120)
+  status        String         @default("PENDING") @db.VarChar(32)
+  result        String?        @db.Text
+  requestDate   DateTime       @default(now()) @map("request_date") @db.Timestamptz()
+  resultDate    DateTime?      @map("result_date") @db.Timestamptz()
+  referral      Referral?      @relation(fields: [referralId], references: [id], onDelete: SetNull)
+  patient       PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  requestedBy   User           @relation("RequestedLabTests", fields: [requestedById], references: [id], onDelete: Restrict)
+  labStaff      User?          @relation("ProcessedLabTests", fields: [labStaffId], references: [id], onDelete: SetNull)
+
+  @@map("lab_tests")
+}
+
+model Prescription {
+  id              Int            @id @default(autoincrement())
+  referralId      Int?           @map("referral_id")
+  patientId       Int            @map("patient_id")
+  requestedById   Int            @map("requested_by_id")
+  pharmacyStaffId Int?           @map("pharmacy_staff_id")
+  medicationName  String         @db.VarChar(120)
+  dosage          String         @db.VarChar(80)
+  frequency       String         @db.VarChar(80)
+  duration        String         @db.VarChar(80)
+  isDispensed     Boolean        @default(false) @map("is_dispensed")
+  dispensedDate   DateTime?      @map("dispensed_date") @db.Timestamptz()
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  referral        Referral?      @relation(fields: [referralId], references: [id], onDelete: SetNull)
+  patient         PatientProfile @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  requestedBy     User           @relation("CreatedPrescriptions", fields: [requestedById], references: [id], onDelete: Restrict)
+  pharmacyStaff   User?          @relation("DispensedPrescriptions", fields: [pharmacyStaffId], references: [id], onDelete: SetNull)
+
+  @@map("prescriptions")
+}
+
+model Attachment {
+  id         Int      @id @default(autoincrement())
+  referralId Int      @map("referral_id")
+  fileName   String   @db.VarChar(240)
+  fileType   String   @db.VarChar(80)
+  uploadDate DateTime @default(now()) @map("upload_date") @db.Timestamptz()
+  referral   Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  message   String   @db.Text
+  type      String   @db.VarChar(48)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Report {
+  id            Int      @id @default(autoincrement())
+  generatedById Int      @map("generated_by_id")
+  reportType    String   @db.VarChar(80)
+  data          String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  generatedBy   User     @relation(fields: [generatedById], references: [id], onDelete: Restrict)
+
+  @@map("reports")
 }

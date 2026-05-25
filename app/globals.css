@@ -1,39 +1,45 @@
 @import "tailwindcss";
 
-/* Force light theme: ignore user/system dark mode for this app. */
-@custom-variant dark (&:where(.__disabled_dark__));
-
-/*
- * Tailwind v4 design tokens.
- * Defining them inside @theme generates the matching utilities
- * (bg-primary, text-accent, border-accent-soft, etc.).
- */
 @theme {
-  --color-primary: #053664;
-  --color-primary-soft: #1e506e;
-  --color-accent: #039292;
-  --color-accent-bright: #08dec8;
-  --color-accent-soft: #aad9e0;
-  --color-muted: #56738c;
-  --color-background: #f7f7f2;
+  --color-background: #F8F8F6;
   --color-surface: #ffffff;
-
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface-elevated: #f2f4f3;
+  --color-border: #e0e4e3;
+  --color-border-subtle: #eaedec;
+  --color-primary: #003B73;
+  --color-primary-soft: #1a5a8a;
+  --color-muted: #6b7f8e;
+  --color-accent: #009499;
+  --color-accent-soft: #009499/10;
+  --color-accent-bright: #00C2C7;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-info: #009499;
 }
 
-html,
-body {
-  background-color: var(--color-background);
-  color: var(--color-primary);
-  color-scheme: light;
-}
-
-body {
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
 }
 
 ::selection {
-  background: var(--color-accent-soft);
+  background: var(--color-accent);
+  color: white;
+}
+
+body {
+  background: var(--color-background);
   color: var(--color-primary);
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(0, 148, 153, 0.06), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
 }
