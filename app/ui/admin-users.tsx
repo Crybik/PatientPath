@@ -18,6 +18,11 @@ type UserRow = {
   plainPassword: string | null
 }
 
+type UserDetails = Awaited<ReturnType<typeof getUserDetails>>
+type LoadedUserDetails = NonNullable<UserDetails>
+type PatientVisitDetails = NonNullable<LoadedUserDetails['patientProfile']>['visits'][number]
+type NotificationDetails = LoadedUserDetails['notifications'][number]
+
 const ROLE_BADGE_COLORS: Record<string, string> = {
   SUPER_ADMIN: 'bg-purple-50 text-purple-700 border-purple-200',
   DOCTOR: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -29,7 +34,7 @@ const ROLE_BADGE_COLORS: Record<string, string> = {
 
 export function AdminUsers({ initialUsers }: { initialUsers: UserRow[] }) {
   const [users, setUsers] = useState(initialUsers)
-  const [selectedUser, setSelectedUser] = useState<any>(null)
+  const [selectedUser, setSelectedUser] = useState<UserDetails>(null)
   const [selectedRow, setSelectedRow] = useState<UserRow | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [filter, setFilter] = useState('ALL')
@@ -193,7 +198,7 @@ export function AdminUsers({ initialUsers }: { initialUsers: UserRow[] }) {
 }
 
 function UserDetailModal({ user, row, loading, onClose, onUpdated, onDeleted }: {
-  user: any
+  user: UserDetails
   row: UserRow | null
   loading: boolean
   onClose: () => void
@@ -204,6 +209,7 @@ function UserDetailModal({ user, row, loading, onClose, onUpdated, onDeleted }: 
   const [showPasswordInput, setShowPasswordInput] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [actionMsg, setActionMsg] = useState('')
+  const notifications = user?.notifications ?? []
 
   function handleToggle() {
     if (!row) return
@@ -403,7 +409,7 @@ function UserDetailModal({ user, row, loading, onClose, onUpdated, onDeleted }: 
                   <div className="mt-4">
                     <p className="text-xs font-semibold text-muted mb-2">Visit History ({user.patientProfile.visits.length})</p>
                     <div className="max-h-48 overflow-y-auto space-y-2 rounded-lg border border-border p-2">
-                      {user.patientProfile.visits.map((v: any) => (
+                      {user.patientProfile.visits.map((v: PatientVisitDetails) => (
                         <div key={v.id} className="rounded-lg bg-surface-elevated p-3 text-xs">
                           <div className="flex justify-between">
                             <span className="font-semibold text-primary">{v.hospitalName}</span>
@@ -433,10 +439,10 @@ function UserDetailModal({ user, row, loading, onClose, onUpdated, onDeleted }: 
             )}
 
             {/* Notifications */}
-            {user?.notifications?.length > 0 && (
-              <Section title={`Recent Notifications (${user.notifications.length})`}>
+            {notifications.length > 0 && (
+              <Section title={`Recent Notifications (${notifications.length})`}>
                 <div className="max-h-36 overflow-y-auto space-y-1.5">
-                  {user.notifications.slice(0, 15).map((n: any) => (
+                  {notifications.slice(0, 15).map((n: NotificationDetails) => (
                     <div key={n.id} className="flex items-start gap-2 text-xs py-1">
                       <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${n.isRead ? 'bg-border' : 'bg-accent'}`} />
                       <div>

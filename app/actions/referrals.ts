@@ -7,7 +7,6 @@ import {
   ReferralStatus,
   UserRole,
 } from '@/app/generated/prisma'
-import { createNotification } from '@/app/lib/clinical-data'
 import { prisma, ready } from '@/app/lib/prisma'
 import { getSession } from '@/app/lib/session'
 

@@ -10,8 +10,9 @@ import {
 import type { SerializedHospital, SerializedReferral, SerializedSlot } from '@/app/lib/dashboard-types'
 import { formatDateTime } from '@/app/ui/dashboard-format'
 import { IconCheck, IconClipboard, IconForward, IconX } from '@/app/ui/icons'
-import { AnimatePresence, FadeInUp, motion, StaggerContainer, StaggerItem } from '@/app/ui/motion'
+import { FadeInUp, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 import { ReferralCard } from '@/app/ui/referral-card'
+import { ReferralClinicalActions } from '@/app/ui/referral-clinical-actions'
 import { StatCard } from '@/app/ui/stat-card'
 
 export function SpecialistQueue({
@@ -96,17 +97,20 @@ export function SpecialistQueue({
           {filtered.map((referral) => (
             <StaggerItem key={referral.id}>
               <ReferralCard referral={referral}>
-                <div className="grid gap-4 xl:grid-cols-3">
-                  {referral.status === 'PENDING' && (
-                    <>
-                      <AcceptForm referralId={referral.id} onChanged={refresh} />
-                      <RejectForm referralId={referral.id} onChanged={refresh} />
-                    </>
-                  )}
-                  {(referral.status === 'ACCEPTED' || referral.status === 'FORWARDED') && (
-                    <CompleteForm referralId={referral.id} onChanged={refresh} />
-                  )}
-                  <ForwardAgainForm referral={referral} hospitals={hospitals} onChanged={refresh} />
+                <div className="space-y-4">
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    {referral.status === 'PENDING' && (
+                      <>
+                        <AcceptForm referralId={referral.id} onChanged={refresh} />
+                        <RejectForm referralId={referral.id} onChanged={refresh} />
+                      </>
+                    )}
+                    {(referral.status === 'ACCEPTED' || referral.status === 'FORWARDED') && (
+                      <CompleteForm referralId={referral.id} onChanged={refresh} />
+                    )}
+                    <ForwardAgainForm referral={referral} hospitals={hospitals} onChanged={refresh} />
+                  </div>
+                  <ReferralClinicalActions referral={referral} />
                 </div>
               </ReferralCard>
             </StaggerItem>

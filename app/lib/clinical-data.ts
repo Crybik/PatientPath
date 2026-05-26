@@ -1,6 +1,6 @@
 import 'server-only'
 
-import type { Prisma } from '@/app/generated/prisma'
+import { UserRole, type Prisma } from '@/app/generated/prisma'
 import type {
   PatientLookupResponse,
   SerializedClinic,
@@ -254,6 +254,18 @@ export function serializePrescription(
   }
 }
 
+const labTestInclude = {
+  patient: true,
+  requestedBy: { include: { staffProfile: true } },
+  labStaff: { include: { staffProfile: true } },
+} satisfies Prisma.LabTestInclude
+
+const prescriptionInclude = {
+  patient: true,
+  requestedBy: { include: { staffProfile: true } },
+  pharmacyStaff: { include: { staffProfile: true } },
+} satisfies Prisma.PrescriptionInclude
+
 // ─── Data Fetchers ───────────────────────────────────────────────────────────
 
 export async function getHospitalsWithClinics() {
@@ -375,19 +387,42 @@ export async function getAllReferrals() {
 // ─── Lab Tests ───────────────────────────────────────────────────────────────
 
 export async function getLabTestsForStaff(userId: number) {
+  return getLabTestsForRole(userId, UserRole.LAB_STAFF)
+}
+
+export async function getLabTestsForRole(userId: number, role: UserRole) {
   await ready()
-  const staff = await prisma.staffProfile.findUnique({
-    where: { userId },
-    select: { hospitalId: true },
-  })
+
+  let where: Prisma.LabTestWhereInput = {}
+  if (role === UserRole.PATIENT) {
+    where = { patient: { userId } }
+  } else if (role === UserRole.DOCTOR) {
+    where = {
+      OR: [
+        { requestedById: userId },
+        { referral: { is: { createdById: userId } } },
+      ],
+    }
+  } else if (role === UserRole.SPECIALIST) {
+    const staff = await prisma.staffProfile.findUnique({
+      where: { userId },
+      select: { hospitalId: true },
+    })
+    where = {
+      OR: [
+        { requestedById: userId },
+        { referral: { is: { currentSpecialistId: userId } } },
+        ...(staff?.hospitalId ? [{ referral: { is: { hospitalId: staff.hospitalId } } }] : []),
+      ],
+    }
+  } else if (role !== UserRole.LAB_STAFF && role !== UserRole.SUPER_ADMIN) {
+    return []
+  }
 
   const tests = await prisma.labTest.findMany({
+    where,
     orderBy: { requestDate: 'desc' },
-    include: {
-      patient: true,
-      requestedBy: { include: { staffProfile: true } },
-      labStaff: { include: { staffProfile: true } },
-    },
+    include: labTestInclude,
   })
   return tests.map(serializeLabTest)
 }
@@ -396,11 +431,7 @@ export async function getAllLabTests() {
   await ready()
   const tests = await prisma.labTest.findMany({
     orderBy: { requestDate: 'desc' },
-    include: {
-      patient: true,
-      requestedBy: { include: { staffProfile: true } },
-      labStaff: { include: { staffProfile: true } },
-    },
+    include: labTestInclude,
   })
   return tests.map(serializeLabTest)
 }
@@ -408,14 +439,42 @@ export async function getAllLabTests() {
 // ─── Prescriptions ──────────────────────────────────────────────────────────
 
 export async function getPrescriptionsForStaff(userId: number) {
+  return getPrescriptionsForRole(userId, UserRole.PHARMACY_STAFF)
+}
+
+export async function getPrescriptionsForRole(userId: number, role: UserRole) {
   await ready()
+
+  let where: Prisma.PrescriptionWhereInput = {}
+  if (role === UserRole.PATIENT) {
+    where = { patient: { userId } }
+  } else if (role === UserRole.DOCTOR) {
+    where = {
+      OR: [
+        { requestedById: userId },
+        { referral: { is: { createdById: userId } } },
+      ],
+    }
+  } else if (role === UserRole.SPECIALIST) {
+    const staff = await prisma.staffProfile.findUnique({
+      where: { userId },
+      select: { hospitalId: true },
+    })
+    where = {
+      OR: [
+        { requestedById: userId },
+        { referral: { is: { currentSpecialistId: userId } } },
+        ...(staff?.hospitalId ? [{ referral: { is: { hospitalId: staff.hospitalId } } }] : []),
+      ],
+    }
+  } else if (role !== UserRole.PHARMACY_STAFF && role !== UserRole.SUPER_ADMIN) {
+    return []
+  }
+
   const prescriptions = await prisma.prescription.findMany({
+    where,
     orderBy: { createdAt: 'desc' },
-    include: {
-      patient: true,
-      requestedBy: { include: { staffProfile: true } },
-      pharmacyStaff: { include: { staffProfile: true } },
-    },
+    include: prescriptionInclude,
   })
   return prescriptions.map(serializePrescription)
 }
@@ -424,11 +483,7 @@ export async function getAllPrescriptions() {
   await ready()
   const prescriptions = await prisma.prescription.findMany({
     orderBy: { createdAt: 'desc' },
-    include: {
-      patient: true,
-      requestedBy: { include: { staffProfile: true } },
-      pharmacyStaff: { include: { staffProfile: true } },
-    },
+    include: prescriptionInclude,
   })
   return prescriptions.map(serializePrescription)
 }

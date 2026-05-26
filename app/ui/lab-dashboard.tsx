@@ -2,15 +2,16 @@
 
 import { useActionState, useCallback, useEffect, useState } from 'react'
 import { processLabTest } from '@/app/actions/lab-tests'
-import type { SerializedLabTest } from '@/app/lib/dashboard-types'
+import type { DashboardRole, SerializedLabTest } from '@/app/lib/dashboard-types'
 import { formatDateTime } from '@/app/ui/dashboard-format'
 import { IconFlask } from '@/app/ui/icons'
 import { FadeInUp, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 import { StatCard } from '@/app/ui/stat-card'
 
-export function LabDashboard({ initialTests }: { initialTests: SerializedLabTest[] }) {
+export function LabDashboard({ initialTests, role }: { initialTests: SerializedLabTest[]; role: DashboardRole }) {
   const [tests, setTests] = useState(initialTests)
-  const [filter, setFilter] = useState<string>('ALL')
+  const canSubmitResults = role === 'LAB_STAFF' || role === 'SUPER_ADMIN'
+  const [filter, setFilter] = useState<string>(canSubmitResults ? 'PENDING' : 'ALL')
 
   const refresh = useCallback(async () => {
     try {
@@ -40,7 +41,9 @@ export function LabDashboard({ initialTests }: { initialTests: SerializedLabTest
           </div>
           <div>
             <h1 className="text-2xl font-bold text-primary">Lab Tests</h1>
-            <p className="text-sm text-muted">Process and manage lab test requests</p>
+            <p className="text-sm text-muted">
+              {canSubmitResults ? 'View pending lab requests and submit results' : 'View lab results linked to your referrals and history'}
+            </p>
           </div>
         </div>
       </FadeInUp>
@@ -73,7 +76,7 @@ export function LabDashboard({ initialTests }: { initialTests: SerializedLabTest
         <StaggerContainer className="space-y-3">
           {filtered.map((test) => (
             <StaggerItem key={test.id}>
-              <LabTestCard test={test} onProcessed={refresh} />
+              <LabTestCard test={test} onProcessed={refresh} canSubmitResults={canSubmitResults} />
             </StaggerItem>
           ))}
         </StaggerContainer>
@@ -82,7 +85,15 @@ export function LabDashboard({ initialTests }: { initialTests: SerializedLabTest
   )
 }
 
-function LabTestCard({ test, onProcessed }: { test: SerializedLabTest; onProcessed: () => Promise<void> }) {
+function LabTestCard({
+  test,
+  onProcessed,
+  canSubmitResults,
+}: {
+  test: SerializedLabTest
+  onProcessed: () => Promise<void>
+  canSubmitResults: boolean
+}) {
   const [state, formAction, pending] = useActionState(processLabTest, undefined)
 
   useEffect(() => { if (state?.success) void onProcessed() }, [onProcessed, state?.success])
@@ -108,13 +119,13 @@ function LabTestCard({ test, onProcessed }: { test: SerializedLabTest; onProcess
 
       {test.result && (
         <div className="mt-3 rounded-lg bg-surface-elevated p-3">
-          <p className="text-xs font-semibold text-muted">Result</p>
+          <p className="text-xs font-semibold text-muted">View Lab Results</p>
           <p className="mt-1 text-sm text-primary-soft">{test.result}</p>
           {test.labStaffName && <p className="mt-1 text-xs text-muted">Processed by: {test.labStaffName}</p>}
         </div>
       )}
 
-      {test.status === 'PENDING' && (
+      {test.status === 'PENDING' && canSubmitResults && (
         <form action={formAction} className="mt-3 border-t border-border pt-3">
           <input type="hidden" name="labTestId" value={test.id} />
           <textarea
@@ -126,9 +137,15 @@ function LabTestCard({ test, onProcessed }: { test: SerializedLabTest; onProcess
           />
           {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
           <button type="submit" disabled={pending} className="mt-2 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
-            {pending ? 'Processing...' : 'Submit Result'}
+            {pending ? 'Submitting...' : 'Submit Results'}
           </button>
         </form>
+      )}
+
+      {test.status === 'PENDING' && !canSubmitResults && (
+        <p className="mt-3 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning">
+          Pending lab request. Results will appear here after lab staff submit them.
+        </p>
       )}
     </div>
   )

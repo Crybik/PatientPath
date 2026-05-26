@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useState, useTransition } from 'react'
 import { addIntegrationEndpoint, removeIntegrationEndpoint, setLastFetch, toggleIntegrationEndpoint, updateWorkerInterval } from '@/app/actions/admin'
 import { IconGlobe, IconLoader, IconPause, IconPlay, IconPlug, IconPlus, IconRefresh, IconSend, IconStop, IconTimer, IconTrash, IconUsers, IconClipboard, IconFlask, IconPill } from '@/app/ui/icons'
 import { AnimatePresence, FadeInUp, motion, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 
 type Endpoint = { id: string; url: string; method: string; params: Record<string, string>; enabled: boolean; category: string }
 type Settings = { endpoints: Endpoint[]; workerIntervalMs: number; lastFetch: string | null }
+type TestResponse = { status: number; time: number; data: unknown; headers: Record<string, string> }
 
 const METHOD_COLORS: Record<string, string> = {
   GET: 'bg-success/10 text-success border-success/20',
@@ -36,12 +37,15 @@ const CATEGORIES = [
   { id: 'pharmacy', label: 'Pharmacy & Rx', desc: 'Sync pharmaceutical prescription data and dispensing records.', Icon: IconPill },
 ] as const
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function IntegrationPage({ initialSettings }: { initialSettings: Settings }) {
   const [settings, setSettings] = useState(initialSettings)
   const [isPending, startTransition] = useTransition()
   const [workerRunning, setWorkerRunning] = useState(false)
   const [fetchCount, setFetchCount] = useState(0)
-  const workerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Active Category Tab
   const [activeCategory, setActiveCategory] = useState<'students' | 'clinics' | 'labs' | 'pharmacy'>('students')
@@ -57,10 +61,10 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
   // Endpoint tester state
   const [testMethod, setTestMethod] = useState('GET')
   const [testUrl, setTestUrl] = useState('/api/integration/students')
-  const [testParams, setTestParams] = useState('count=100')
+  const [testParams, setTestParams] = useState('count=2')
   const [testBody, setTestBody] = useState('')
   const [testHeaders, setTestHeaders] = useState('Content-Type: application/json')
-  const [testResponse, setTestResponse] = useState<{ status: number; time: number; data: any; headers: Record<string, string> } | null>(null)
+  const [testResponse, setTestResponse] = useState<TestResponse | null>(null)
   const [testLoading, setTestLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'params' | 'headers' | 'body'>('params')
   const [responseTab, setResponseTab] = useState<'body' | 'headers'>('body')
@@ -100,10 +104,8 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
         
         setFetchCount((c) => c + 1)
         await setLastFetch()
-        // Update local state so UI updates the "Last Fetch" timestamp immediately
-        setSettings((s) => ({ ...s, lastFetch: new Date().toISOString() }))
-      } catch (err: any) {
-        addLog(`ERROR: [${ep.category?.toUpperCase() || 'STUDENTS'}] ${ep.method} ${ep.url} failed: ${err.message || err}`, 'error')
+      } catch (err) {
+        addLog(`ERROR: [${ep.category?.toUpperCase() || 'STUDENTS'}] ${ep.method} ${ep.url} failed: ${errorMessage(err)}`, 'error')
       }
     }
     
@@ -111,32 +113,32 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
       addLog('No integration endpoints are currently enabled.', 'info')
     } else {
       addLog(`Integration fetch round completed. Successful: ${successCount}/${enabledCount}`, successCount === enabledCount ? 'success' : 'info')
+      // Update local state ONLY ONCE at the end of the round to prevent rapid multiple re-renders
+      setSettings((s) => ({ ...s, lastFetch: new Date().toISOString() }))
     }
   }, [settings.endpoints, addLog])
 
   function startWorker() {
-    if (workerRef.current) clearInterval(workerRef.current)
     addLog(`Background worker started (Interval: ${settings.workerIntervalMs / 1000}s)`, 'success')
     void runWorker()
-    workerRef.current = setInterval(() => void runWorker(), settings.workerIntervalMs)
     setWorkerRunning(true)
   }
 
   function stopWorker() {
-    if (workerRef.current) clearInterval(workerRef.current)
-    workerRef.current = null
     setWorkerRunning(false)
     addLog('Background worker stopped.', 'info')
   }
 
+  // Automatic Lifecycle Timer Management (Bulletproof React Interval Effect)
   useEffect(() => {
-    return () => { if (workerRef.current) clearInterval(workerRef.current) }
-  }, [])
+    if (!workerRunning) return
 
-  useEffect(() => {
-    if (workerRunning) {
-      if (workerRef.current) clearInterval(workerRef.current)
-      workerRef.current = setInterval(() => void runWorker(), settings.workerIntervalMs)
+    const timer = setInterval(() => {
+      void runWorker()
+    }, settings.workerIntervalMs)
+
+    return () => {
+      clearInterval(timer)
     }
   }, [settings.workerIntervalMs, workerRunning, runWorker])
 
@@ -222,7 +224,7 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
       const resHeaders: Record<string, string> = {}
       res.headers.forEach((v, k) => { resHeaders[k] = v })
 
-      let data: any
+      let data: unknown
       const ct = res.headers.get('content-type') ?? ''
       if (ct.includes('json')) {
         data = await res.json()
@@ -236,10 +238,10 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
       } else {
         addLog(`API Tester FAILED: ${testMethod} ${testUrl} -> Status ${res.status} (${time}ms)`, 'error')
       }
-    } catch (err: any) {
+    } catch (err) {
       const time = Math.round(performance.now() - start)
-      setTestResponse({ status: 0, time, data: { error: err.message }, headers: {} })
-      addLog(`API Tester ERROR: ${testMethod} ${testUrl} failed: ${err.message || err} (${time}ms)`, 'error')
+      setTestResponse({ status: 0, time, data: { error: errorMessage(err) }, headers: {} })
+      addLog(`API Tester ERROR: ${testMethod} ${testUrl} failed: ${errorMessage(err)} (${time}ms)`, 'error')
     } finally {
       setTestLoading(false)
     }
@@ -444,7 +446,7 @@ export function IntegrationPage({ initialSettings }: { initialSettings: Settings
               ))
             ) : (
               <div className="h-full flex items-center justify-center text-neutral-600 select-none">
-                Console idle. Start worker or click "Fetch Now" to see live activity.
+                Console idle. Start worker or click &quot;Fetch Now&quot; to see live activity.
               </div>
             )}
           </div>

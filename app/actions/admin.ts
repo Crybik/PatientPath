@@ -150,40 +150,40 @@ function getIntegrationConfig() {
         {
           id: 'students-api',
           url: '/api/integration/students',
-          method: 'GET',
-          params: { count: '100' },
+          method: 'POST',
+          params: { count: '2' },
           enabled: true,
           category: 'students',
         },
         {
           id: 'clinics-api',
           url: '/api/integration/clinics',
-          method: 'GET',
-          params: { limit: '10' },
+          method: 'POST',
+          params: { limit: '2' },
           enabled: true,
           category: 'clinics',
         },
         {
           id: 'appointments-api',
           url: '/api/integration/appointments',
-          method: 'GET',
-          params: { date: 'today' },
+          method: 'POST',
+          params: { limit: '2' },
           enabled: true,
           category: 'clinics',
         },
         {
           id: 'lab-tests-api',
           url: '/api/integration/lab-tests',
-          method: 'GET',
-          params: { status: 'PENDING' },
+          method: 'POST',
+          params: { limit: '2', status: 'PENDING' },
           enabled: true,
           category: 'labs',
         },
         {
           id: 'prescriptions-api',
           url: '/api/integration/prescriptions',
-          method: 'GET',
-          params: { limit: '10' },
+          method: 'POST',
+          params: { limit: '2' },
           enabled: true,
           category: 'pharmacy',
         },
@@ -243,27 +243,73 @@ export async function setLastFetch() {
 
 // ─── DB Browser ──────────────────────────────────────────────────────────────
 
+const DB_TABLES = [
+  { name: 'users', model: 'user' },
+  { name: 'patient_profiles', model: 'patientProfile' },
+  { name: 'staff_profiles', model: 'staffProfile' },
+  { name: 'hospitals', model: 'hospital' },
+  { name: 'clinics', model: 'clinic' },
+  { name: 'referrals', model: 'referral' },
+  { name: 'referral_events', model: 'referralEvent' },
+  { name: 'lab_tests', model: 'labTest' },
+  { name: 'prescriptions', model: 'prescription' },
+  { name: 'notifications', model: 'notification' },
+  { name: 'patient_visits', model: 'patientVisit' },
+  { name: 'clinic_availability_slots', model: 'clinicAvailabilitySlot' },
+] as const
+
+type DbModel = (typeof DB_TABLES)[number]['model']
+type DbRow = Record<string, unknown>
+
+function isDbModel(model: string): model is DbModel {
+  return DB_TABLES.some((table) => table.model === model)
+}
+
+async function countDbRows(model: DbModel) {
+  switch (model) {
+    case 'user': return prisma.user.count()
+    case 'patientProfile': return prisma.patientProfile.count()
+    case 'staffProfile': return prisma.staffProfile.count()
+    case 'hospital': return prisma.hospital.count()
+    case 'clinic': return prisma.clinic.count()
+    case 'referral': return prisma.referral.count()
+    case 'referralEvent': return prisma.referralEvent.count()
+    case 'labTest': return prisma.labTest.count()
+    case 'prescription': return prisma.prescription.count()
+    case 'notification': return prisma.notification.count()
+    case 'patientVisit': return prisma.patientVisit.count()
+    case 'clinicAvailabilitySlot': return prisma.clinicAvailabilitySlot.count()
+  }
+}
+
+async function findDbRows(model: DbModel, skip: number, take: number) {
+  switch (model) {
+    case 'user': return prisma.user.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'patientProfile': return prisma.patientProfile.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'staffProfile': return prisma.staffProfile.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'hospital': return prisma.hospital.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'clinic': return prisma.clinic.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'referral': return prisma.referral.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'referralEvent': return prisma.referralEvent.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'labTest': return prisma.labTest.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'prescription': return prisma.prescription.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'notification': return prisma.notification.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'patientVisit': return prisma.patientVisit.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'clinicAvailabilitySlot': return prisma.clinicAvailabilitySlot.findMany({ take, skip, orderBy: { id: 'desc' } })
+  }
+}
+
+function serializeDbRows(rows: unknown[]): DbRow[] {
+  return JSON.parse(JSON.stringify(rows, (_, value) => (value instanceof Date ? value.toISOString() : value))) as DbRow[]
+}
+
 export async function getDbTables() {
   await requireAdmin()
   await ready()
-  const tables = [
-    { name: 'users', model: 'user' },
-    { name: 'patient_profiles', model: 'patientProfile' },
-    { name: 'staff_profiles', model: 'staffProfile' },
-    { name: 'hospitals', model: 'hospital' },
-    { name: 'clinics', model: 'clinic' },
-    { name: 'referrals', model: 'referral' },
-    { name: 'referral_events', model: 'referralEvent' },
-    { name: 'lab_tests', model: 'labTest' },
-    { name: 'prescriptions', model: 'prescription' },
-    { name: 'notifications', model: 'notification' },
-    { name: 'patient_visits', model: 'patientVisit' },
-    { name: 'clinic_availability_slots', model: 'clinicAvailabilitySlot' },
-  ]
 
   const counts = await Promise.all(
-    tables.map(async (t) => {
-      const count = await (prisma as any)[t.model].count()
+    DB_TABLES.map(async (t) => {
+      const count = await countDbRows(t.model)
       return { ...t, count }
     }),
   )
@@ -273,13 +319,15 @@ export async function getDbTables() {
 export async function getDbTableData(model: string, page: number = 1, limit: number = 20) {
   await requireAdmin()
   await ready()
+  if (!isDbModel(model)) return { data: [], total: 0, page, limit }
+
   const skip = (page - 1) * limit
   try {
     const [data, total] = await Promise.all([
-      (prisma as any)[model].findMany({ take: limit, skip, orderBy: { id: 'desc' } }),
-      (prisma as any)[model].count(),
+      findDbRows(model, skip, limit),
+      countDbRows(model),
     ])
-    return { data: JSON.parse(JSON.stringify(data, (_, v) => (v instanceof Date ? v.toISOString() : v))), total, page, limit }
+    return { data: serializeDbRows(data), total, page, limit }
   } catch {
     return { data: [], total: 0, page, limit }
   }

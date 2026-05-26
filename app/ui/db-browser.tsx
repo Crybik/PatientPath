@@ -6,12 +6,13 @@ import { IconChevronLeft, IconChevronRight, IconDatabase, IconLoader } from '@/a
 import { FadeInUp, motion } from '@/app/ui/motion'
 
 type TableInfo = { name: string; model: string; count: number }
+type TableRow = Record<string, unknown>
 
 export function DbBrowser({ initialTables }: { initialTables: TableInfo[] }) {
   const [tables] = useState(initialTables)
   const [selectedTable, setSelectedTable] = useState<string | null>(null)
   const [selectedName, setSelectedName] = useState<string>('')
-  const [tableData, setTableData] = useState<any[]>([])
+  const [tableData, setTableData] = useState<TableRow[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [isPending, startTransition] = useTransition()

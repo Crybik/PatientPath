@@ -10,19 +10,25 @@ const navByRole: Record<string, { href: string; label: string; icon?: React.Reac
     { href: '/dashboard', label: 'Overview', icon: <IconHome className="w-4 h-4" /> },
     { href: '/dashboard/forward', label: 'Forward Note', icon: <IconForward className="w-4 h-4" /> },
     { href: '/dashboard/referrals', label: 'My Referrals', icon: <IconClipboard className="w-4 h-4" /> },
+    { href: '/dashboard/lab-tests', label: 'Lab Results', icon: <IconFlask className="w-4 h-4" /> },
+    { href: '/dashboard/prescriptions', label: 'Prescriptions', icon: <IconPill className="w-4 h-4" /> },
   ],
   [UserRole.SPECIALIST]: [
     { href: '/dashboard', label: 'Overview', icon: <IconHome className="w-4 h-4" /> },
     { href: '/dashboard/queue', label: 'Referral Queue', icon: <IconClipboard className="w-4 h-4" /> },
+    { href: '/dashboard/lab-tests', label: 'Lab Results', icon: <IconFlask className="w-4 h-4" /> },
+    { href: '/dashboard/prescriptions', label: 'Prescriptions', icon: <IconPill className="w-4 h-4" /> },
   ],
   [UserRole.PATIENT]: [
     { href: '/dashboard', label: 'Overview', icon: <IconHome className="w-4 h-4" /> },
     { href: '/dashboard/forwards', label: 'My Forwards', icon: <IconForward className="w-4 h-4" /> },
     { href: '/dashboard/visits', label: 'Visit History', icon: <IconClipboard className="w-4 h-4" /> },
+    { href: '/dashboard/lab-tests', label: 'Lab Results', icon: <IconFlask className="w-4 h-4" /> },
+    { href: '/dashboard/prescriptions', label: 'Prescriptions', icon: <IconPill className="w-4 h-4" /> },
   ],
   [UserRole.LAB_STAFF]: [
     { href: '/dashboard', label: 'Overview', icon: <IconHome className="w-4 h-4" /> },
-    { href: '/dashboard/lab-tests', label: 'Lab Tests', icon: <IconFlask className="w-4 h-4" /> },
+    { href: '/dashboard/lab-tests', label: 'Pending Lab Requests', icon: <IconFlask className="w-4 h-4" /> },
   ],
   [UserRole.PHARMACY_STAFF]: [
     { href: '/dashboard', label: 'Overview', icon: <IconHome className="w-4 h-4" /> },

@@ -24,9 +24,12 @@ export function NotificationBell() {
   }, [])
 
   useEffect(() => {
-    void refresh()
+    const initial = setTimeout(() => void refresh(), 0)
     const timer = setInterval(() => void refresh(), 10000)
-    return () => clearInterval(timer)
+    return () => {
+      clearTimeout(initial)
+      clearInterval(timer)
+    }
   }, [refresh])
 
   async function handleMarkAllRead() {

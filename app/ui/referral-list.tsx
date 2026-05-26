@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { SerializedReferral } from '@/app/lib/dashboard-types'
 import { FadeInUp, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 import { ReferralCard } from '@/app/ui/referral-card'
+import { ReferralClinicalActions } from '@/app/ui/referral-clinical-actions'
 import { StatCard } from '@/app/ui/stat-card'
 
 export function ReferralList({
@@ -57,7 +58,9 @@ export function ReferralList({
         <StaggerContainer className="space-y-3">
           {filtered.map((r) => (
             <StaggerItem key={r.id}>
-              <ReferralCard referral={r} />
+              <ReferralCard referral={r}>
+                <ReferralClinicalActions referral={r} />
+              </ReferralCard>
             </StaggerItem>
           ))}
         </StaggerContainer>

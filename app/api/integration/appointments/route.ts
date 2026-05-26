@@ -1,177 +1,164 @@
 import { type NextRequest } from 'next/server'
-import { prisma, ready } from '@/app/lib/prisma'
-import { ReferralStatus } from '@/app/generated/prisma'
 import bcrypt from 'bcryptjs'
+import { ReferralStatus } from '@/app/generated/prisma'
+import { requireAdminApi } from '@/app/lib/api-auth'
+import { generateAppointments, readLimit, type MockAppointment, type MockStudent } from '@/app/lib/integration-mock-data'
+import { prisma, ready } from '@/app/lib/prisma'
 
-const STUDENTS = [
-  { uniId: '0232608', fullName: 'Jood Mohammad', email: 'jood@ju.edu.jo', gender: 'FEMALE' as const, dob: '2003-04-12', phone: '+962791112223', faculty: 'IT' },
-  { uniId: '0233949', fullName: 'Saleh Ahmad', email: 'saleh@ju.edu.jo', gender: 'MALE' as const, dob: '2002-11-20', phone: '+962793334445', faculty: 'Engineering' },
-  { uniId: '0239420', fullName: 'Mahmood Abdullah', email: 'mahmood@ju.edu.jo', gender: 'MALE' as const, dob: '2004-01-15', phone: '+962795556667', faculty: 'Science' },
-  { uniId: '0237806', fullName: 'Rasha Zahran', email: 'rasha@ju.edu.jo', gender: 'FEMALE' as const, dob: '2003-08-05', phone: '+962797778889', faculty: 'Medicine' },
-  { uniId: '0220912', fullName: 'Sara Haddad', email: 'sara@ju.edu.jo', gender: 'FEMALE' as const, dob: '2002-05-18', phone: '+962799990000', faculty: 'Pharmacy' },
-]
-
-const CLINICS = [
-  { name: 'Internal Medicine Clinic', slug: 'internal-medicine', description: 'General adult medical care and chronic disease management.' },
-  { name: 'Cardiology Clinic', slug: 'cardiology', description: 'Comprehensive heart care, ECGs, and vascular diagnostics.' },
-  { name: 'Orthopedics Clinic', slug: 'orthopedics', description: 'Bone, joint, and muscle disorder specialist care.' },
-  { name: 'Ophthalmology Clinic', slug: 'ophthalmology', description: 'Eye exams, vision testing, and ocular disease care.' },
-  { name: 'Pediatrics Clinic', slug: 'pediatrics', description: 'Specialized healthcare for children, infants, and adolescents.' },
-]
-const SPECIALISTS = ['Dr. Naif Abdullat', 'Dr. Amjad Hudaib', 'Dr. Reem Masri', 'Dr. Khaled Haddad', 'Dr. Dina Jarrar']
-const STATUSES = ['ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'PENDING']
-
-function randomItem<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]
+const HOSPITAL = {
+  name: 'Jordan University Hospital',
+  shortName: 'JUH',
+  city: 'Amman',
+  logoPath: '/jordan-university-hospital-logo.png',
 }
 
-function generateAppointments(count: number) {
-  const appointments = []
-  const now = new Date()
+async function ensurePatient(student: MockStudent, passwordHash: string) {
+  const existing = await prisma.patientProfile.findUnique({
+    where: { uniId: student.uniId },
+    select: { id: true, userId: true },
+  })
 
-  for (let i = 0; i < count; i++) {
-    const student = randomItem(STUDENTS)
-    const clinic = randomItem(CLINICS)
-    const specialist = randomItem(SPECIALISTS)
-    const status = randomItem(STATUSES)
-    
-    const dateOffset = Math.floor(Math.random() * 10) - 5
-    const appointmentDate = new Date(now)
-    appointmentDate.setDate(now.getDate() + dateOffset)
-    appointmentDate.setHours(9 + Math.floor(Math.random() * 5), 0, 0, 0)
-
-    appointments.push({
-      idStr: `apt-${1000 + i}`,
-      student,
-      clinic,
-      specialistName: specialist,
-      scheduledAt: appointmentDate.toISOString(),
-      status,
-      doctorNote: `Referred for specialized diagnostic review. Follow-up after 1 week.`,
-      specialistNote: status === 'COMPLETED' ? `Patient assessed. Recommended medication and return-to-clinic if symptoms persist.` : null,
+  if (existing) {
+    await prisma.patientProfile.update({
+      where: { id: existing.id },
+      data: {
+        fullName: student.fullName,
+        gender: student.gender,
+        dob: new Date(student.dob),
+        phoneNumber: student.phone,
+        faculty: student.faculty,
+      },
     })
+    return existing
   }
-  return appointments
+
+  const user = await prisma.user.upsert({
+    where: { username: student.uniId },
+    update: { passwordHash, plainPassword: 'password123', email: student.email, role: 'PATIENT', isActive: true },
+    create: { username: student.uniId, passwordHash, plainPassword: 'password123', email: student.email, role: 'PATIENT' },
+    select: { id: true },
+  })
+
+  return prisma.patientProfile.create({
+    data: {
+      userId: user.id,
+      fullName: student.fullName,
+      uniId: student.uniId,
+      gender: student.gender,
+      dob: new Date(student.dob),
+      phoneNumber: student.phone,
+      faculty: student.faculty,
+    },
+    select: { id: true, userId: true },
+  })
+}
+
+async function ensureStaff(passwordHash: string, role: 'DOCTOR' | 'SPECIALIST', hospitalId: number) {
+  const username = role === 'DOCTOR' ? 'doctor_integrated' : 'specialist_integrated'
+  const user = await prisma.user.upsert({
+    where: { username },
+    update: { passwordHash, plainPassword: 'password123', role, isActive: true },
+    create: { username, passwordHash, plainPassword: 'password123', role },
+    select: { id: true },
+  })
+
+  await prisma.staffProfile.upsert({
+    where: { userId: user.id },
+    update: {
+      fullName: role === 'DOCTOR' ? 'Dr. Naif Abdullat' : 'Dr. Amjad Hudaib',
+      title: role === 'DOCTOR' ? 'Clinic Family Doctor' : 'Consultant Specialist',
+      specialization: role === 'DOCTOR' ? 'Family Medicine' : 'Internal Medicine',
+      hospitalId: role === 'SPECIALIST' ? hospitalId : null,
+    },
+    create: {
+      userId: user.id,
+      fullName: role === 'DOCTOR' ? 'Dr. Naif Abdullat' : 'Dr. Amjad Hudaib',
+      title: role === 'DOCTOR' ? 'Clinic Family Doctor' : 'Consultant Specialist',
+      specialization: role === 'DOCTOR' ? 'Family Medicine' : 'Internal Medicine',
+      hospitalId: role === 'SPECIALIST' ? hospitalId : null,
+    },
+  })
+
+  return user
+}
+
+function appointmentPreview(item: MockAppointment) {
+  return {
+    id: item.externalId,
+    studentId: item.student.uniId,
+    patientName: item.student.fullName,
+    clinicName: item.clinic.name,
+    specialistName: item.specialistName,
+    scheduledAt: item.scheduledAt,
+    status: item.status,
+    doctorNote: item.doctorNote,
+    specialistNote: item.specialistNote,
+  }
 }
 
 export async function GET(request: NextRequest) {
-  const limitParam = request.nextUrl.searchParams.get('limit') || '10'
-  const limit = Math.min(Math.max(parseInt(limitParam, 10) || 10, 1), 100)
+  const auth = await requireAdminApi()
+  if ('response' in auth) return auth.response
+
+  const limit = readLimit(request.nextUrl.searchParams.get('limit'), 10, 100)
+  const appointments = generateAppointments(limit).map(appointmentPreview)
+
+  return Response.json({
+    success: true,
+    mode: 'preview',
+    count: appointments.length,
+    fetchedAt: new Date().toISOString(),
+    appointments,
+  })
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireAdminApi()
+  if ('response' in auth) return auth.response
+
+  const limit = readLimit(request.nextUrl.searchParams.get('limit'), 10, 100)
+  const generated = generateAppointments(limit)
+  const passwordHash = await bcrypt.hash('password123', 10)
 
   await ready()
 
-  // 1. Ensure Hospital exists
-  let hospital = await prisma.hospital.findFirst()
-  if (!hospital) {
-    hospital = await prisma.hospital.create({
-      data: { name: 'Jordan University Hospital', shortName: 'JUH', city: 'Amman' }
-    })
-  }
+  const hospital = await prisma.hospital.upsert({
+    where: { shortName: HOSPITAL.shortName },
+    update: HOSPITAL,
+    create: HOSPITAL,
+  })
+  const doctor = await ensureStaff(passwordHash, 'DOCTOR', hospital.id)
+  const specialist = await ensureStaff(passwordHash, 'SPECIALIST', hospital.id)
 
-  // 2. Ensure default DOCTOR and SPECIALIST users exist in DB
-  const passwordHash = await bcrypt.hash('password123', 10)
-  
-  let doctor = await prisma.user.findFirst({ where: { role: 'DOCTOR' } })
-  if (!doctor) {
-    doctor = await prisma.user.create({
-      data: {
-        username: 'doctor_integrated',
-        passwordHash,
-        plainPassword: 'password123',
-        role: 'DOCTOR',
-        staffProfile: {
-          create: {
-            fullName: 'Dr. Naif Abdullat',
-            title: 'Clinic Family Doctor',
-            specialization: 'Family Medicine',
-            hospitalId: hospital.id
-          }
-        }
-      }
-    })
-  }
-
-  let specialist = await prisma.user.findFirst({ where: { role: 'SPECIALIST' } })
-  if (!specialist) {
-    specialist = await prisma.user.create({
-      data: {
-        username: 'specialist_integrated',
-        passwordHash,
-        plainPassword: 'password123',
-        role: 'SPECIALIST',
-        staffProfile: {
-          create: {
-            fullName: 'Dr. Amjad Hudaib',
-            title: 'Consultant Specialist',
-            specialization: 'Internal Medicine',
-            hospitalId: hospital.id
-          }
-        }
-      }
-    })
-  }
-
-  const generated = generateAppointments(limit)
-  const appointmentsData = []
+  let created = 0
+  let existing = 0
+  const appointments = []
 
   for (const item of generated) {
-    try {
-      // 3. Ensure Patient profile exists in DB (sync on the fly!)
-      let patient = await prisma.patientProfile.findUnique({
-        where: { uniId: item.student.uniId },
-      })
+    const patient = await ensurePatient(item.student, passwordHash)
+    const clinic = await prisma.clinic.upsert({
+      where: { hospitalId_slug: { hospitalId: hospital.id, slug: item.clinic.slug } },
+      update: { name: item.clinic.name, description: item.clinic.description },
+      create: { hospitalId: hospital.id, name: item.clinic.name, slug: item.clinic.slug, description: item.clinic.description },
+    })
+    const scheduledAt = new Date(item.scheduledAt)
+    const found = await prisma.referral.findFirst({
+      where: { patientId: patient.id, clinicId: clinic.id, scheduledAt },
+      select: { id: true },
+    })
 
-      if (!patient) {
-        const patientUser = await prisma.user.create({
+    const referral = found
+      ? await prisma.referral.update({
+          where: { id: found.id },
           data: {
-            username: item.student.uniId,
-            passwordHash,
-            plainPassword: 'password123',
-            email: item.student.email,
-            role: 'PATIENT',
-            patientProfile: {
-              create: {
-                fullName: item.student.fullName,
-                uniId: item.student.uniId,
-                gender: item.student.gender,
-                dob: new Date(item.student.dob),
-                phoneNumber: item.student.phone,
-                faculty: item.student.faculty,
-              }
-            }
+            currentSpecialistId: specialist.id,
+            status: item.status as ReferralStatus,
+            doctorNote: item.doctorNote,
+            specialistNote: item.specialistNote,
+            acceptedAt: item.status !== 'PENDING' ? new Date() : null,
           },
-          include: { patientProfile: true }
         })
-        patient = patientUser.patientProfile!
-      }
-
-      // 4. Ensure Clinic exists in DB
-      let clinic = await prisma.clinic.findFirst({
-        where: { hospitalId: hospital.id, slug: item.clinic.slug }
-      })
-
-      if (!clinic) {
-        clinic = await prisma.clinic.create({
-          data: {
-            hospitalId: hospital.id,
-            name: item.clinic.name,
-            slug: item.clinic.slug,
-            description: item.clinic.description
-          }
-        })
-      }
-
-      // 5. Check if Referral (Appointment) already exists for this patient in this clinic at startsAt (checks for new data only)
-      let referral = await prisma.referral.findFirst({
-        where: {
-          patientId: patient.id,
-          clinicId: clinic.id,
-          scheduledAt: new Date(item.scheduledAt),
-        }
-      })
-
-      if (!referral) {
-        referral = await prisma.referral.create({
+      : await prisma.referral.create({
           data: {
             patientId: patient.id,
             createdById: doctor.id,
@@ -181,42 +168,34 @@ export async function GET(request: NextRequest) {
             status: item.status as ReferralStatus,
             doctorNote: item.doctorNote,
             specialistNote: item.specialistNote,
-            scheduledAt: new Date(item.scheduledAt),
+            scheduledAt,
             acceptedAt: item.status !== 'PENDING' ? new Date() : null,
-          }
+          },
         })
-      }
 
-      appointmentsData.push({
-        id: `apt-${referral.id}`,
-        studentId: item.student.uniId,
-        patientName: item.student.fullName,
-        clinicName: clinic.name,
-        specialistName: item.specialistName,
-        scheduledAt: referral.scheduledAt?.toISOString() || item.scheduledAt,
-        status: referral.status,
-        doctorNote: referral.doctorNote,
-        specialistNote: referral.specialistNote,
-      })
-    } catch {
-      appointmentsData.push({
-        id: item.idStr,
-        studentId: item.student.uniId,
-        patientName: item.student.fullName,
-        clinicName: item.clinic.name,
-        specialistName: item.specialistName,
-        scheduledAt: item.scheduledAt,
-        status: item.status,
-        doctorNote: item.doctorNote,
-        specialistNote: item.specialistNote,
-      })
-    }
+    if (found) existing += 1
+    else created += 1
+
+    appointments.push({
+      id: `apt-${referral.id}`,
+      studentId: item.student.uniId,
+      patientName: item.student.fullName,
+      clinicName: clinic.name,
+      specialistName: item.specialistName,
+      scheduledAt: referral.scheduledAt?.toISOString() ?? item.scheduledAt,
+      status: referral.status,
+      doctorNote: referral.doctorNote,
+      specialistNote: referral.specialistNote,
+    })
   }
 
   return Response.json({
     success: true,
-    count: appointmentsData.length,
+    mode: 'sync',
+    count: appointments.length,
+    created,
+    existing,
     fetchedAt: new Date().toISOString(),
-    appointments: appointmentsData.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()),
+    appointments,
   })
 }

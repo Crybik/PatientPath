@@ -21,6 +21,26 @@ const ProcessLabTestSchema = z.object({
   result: z.string().trim().min(2, 'Result is required.').max(5000),
 })
 
+async function canRequestForReferral(referralId: number, patientId: number, userId: number, role: UserRole) {
+  if (role === UserRole.SUPER_ADMIN) return true
+
+  const referral = await prisma.referral.findUnique({
+    where: { id: referralId },
+    select: { patientId: true, createdById: true, currentSpecialistId: true, hospitalId: true },
+  })
+  if (!referral || referral.patientId !== patientId) return false
+
+  if (role === UserRole.DOCTOR) return referral.createdById === userId
+  if (role !== UserRole.SPECIALIST) return false
+
+  const staff = await prisma.staffProfile.findUnique({
+    where: { userId },
+    select: { hospitalId: true },
+  })
+
+  return referral.currentSpecialistId === userId || staff?.hospitalId === referral.hospitalId
+}
+
 export async function requestLabTest(
   _state: LabTestActionState,
   formData: FormData,
@@ -47,6 +67,10 @@ export async function requestLabTest(
       select: { id: true, userId: true },
     })
     if (!patient) return { message: 'Patient not found.' }
+    if (referralId) {
+      const allowed = await canRequestForReferral(referralId, patientId, session.userId, session.role)
+      if (!allowed) return { message: 'You cannot request tests for this referral.' }
+    }
 
     await prisma.labTest.create({
       data: {
@@ -67,6 +91,7 @@ export async function requestLabTest(
     })
 
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/lab-tests')
     return { success: true, message: `Lab test "${testType}" requested.` }
   } catch {
     return { message: 'Could not request lab test.' }
@@ -125,6 +150,7 @@ export async function processLabTest(
     })
 
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/lab-tests')
     return { success: true, message: 'Lab test processed successfully.' }
   } catch {
     return { message: 'Could not process lab test.' }

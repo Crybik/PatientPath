@@ -54,7 +54,15 @@ export function DashboardShell({
         {/* Mobile header */}
         <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 lg:hidden">
           <div className="flex items-center gap-3">
-            <Image src="/jordan-university-hospital-logo.png" alt="Logo" width={32} height={32} className="rounded-lg" />
+            <Image
+              src="/jordan-university-hospital-logo.png"
+              alt="Logo"
+              width={32}
+              height={32}
+              priority
+              style={{ width: 32, height: 32 }}
+              className="rounded-lg"
+            />
             <span className="text-sm font-bold text-primary">PatientPath</span>
           </div>
           <div className="flex items-center gap-2">
@@ -78,7 +86,15 @@ export function DashboardShell({
           {/* Logo */}
           <div className="hidden lg:block">
             <div className="flex items-center gap-3 px-2 pb-5 border-b border-border">
-              <Image src="/jordan-university-hospital-logo.png" alt="Logo" width={38} height={38} className="rounded-lg" />
+              <Image
+                src="/jordan-university-hospital-logo.png"
+                alt="Logo"
+                width={38}
+                height={38}
+                priority
+                style={{ width: 38, height: 38 }}
+                className="rounded-lg"
+              />
               <div>
                 <p className="text-sm font-bold text-primary">PatientPath</p>
                 <p className="text-[11px] text-muted">{roleLabel}</p>

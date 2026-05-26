@@ -52,7 +52,15 @@ export default function AuthForm({
       <div ref={cardRef} className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8 shadow-xl relative">
         <div className="mb-6">
           <div className="mb-4 flex items-center gap-3">
-            <Image src="/jordan-university-hospital-logo.png" alt="PatientPath" width={36} height={36} className="rounded-lg" />
+            <Image
+              src="/jordan-university-hospital-logo.png"
+              alt="PatientPath"
+              width={36}
+              height={36}
+              priority
+              style={{ width: 36, height: 36 }}
+              className="rounded-lg"
+            />
             <span className="text-xs font-semibold tracking-widest text-accent uppercase">
               PatientPath
             </span>

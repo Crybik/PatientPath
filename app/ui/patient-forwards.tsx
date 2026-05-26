@@ -32,7 +32,7 @@ export function PatientForwards({
     <div className="space-y-6">
       <FadeInUp>
         <h1 className="text-2xl font-bold text-primary">My Forwards</h1>
-        <p className="text-sm text-muted">Track your active referrals and their status</p>
+        <p className="text-sm text-muted">Track active referrals and status for {patient.fullName}</p>
       </FadeInUp>
 
       <div className="grid gap-4 sm:grid-cols-3">

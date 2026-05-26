@@ -23,6 +23,26 @@ const DispenseSchema = z.object({
   prescriptionId: z.coerce.number().int().positive(),
 })
 
+async function canCreateForReferral(referralId: number, patientId: number, userId: number, role: UserRole) {
+  if (role === UserRole.SUPER_ADMIN) return true
+
+  const referral = await prisma.referral.findUnique({
+    where: { id: referralId },
+    select: { patientId: true, createdById: true, currentSpecialistId: true, hospitalId: true },
+  })
+  if (!referral || referral.patientId !== patientId) return false
+
+  if (role === UserRole.DOCTOR) return referral.createdById === userId
+  if (role !== UserRole.SPECIALIST) return false
+
+  const staff = await prisma.staffProfile.findUnique({
+    where: { userId },
+    select: { hospitalId: true },
+  })
+
+  return referral.currentSpecialistId === userId || staff?.hospitalId === referral.hospitalId
+}
+
 export async function createPrescription(
   _state: PrescriptionActionState,
   formData: FormData,
@@ -52,6 +72,10 @@ export async function createPrescription(
       select: { id: true, userId: true },
     })
     if (!patient) return { message: 'Patient not found.' }
+    if (referralId) {
+      const allowed = await canCreateForReferral(referralId, patientId, session.userId, session.role)
+      if (!allowed) return { message: 'You cannot create prescriptions for this referral.' }
+    }
 
     await prisma.prescription.create({
       data: {
@@ -74,6 +98,7 @@ export async function createPrescription(
     })
 
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/prescriptions')
     return { success: true, message: `Prescription for "${medicationName}" created.` }
   } catch {
     return { message: 'Could not create prescription.' }
@@ -131,6 +156,7 @@ export async function dispensePrescription(
     })
 
     revalidatePath('/dashboard')
+    revalidatePath('/dashboard/prescriptions')
     return { success: true, message: 'Prescription dispensed.' }
   } catch {
     return { message: 'Could not dispense prescription.' }

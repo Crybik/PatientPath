@@ -1,148 +1,134 @@
 import { type NextRequest } from 'next/server'
+import { requireAdminApi } from '@/app/lib/api-auth'
+import { generateSlots, MOCK_CLINICS, readLimit } from '@/app/lib/integration-mock-data'
 import { prisma, ready } from '@/app/lib/prisma'
 
-const CLINICS = [
-  { name: 'Internal Medicine Clinic', slug: 'internal-medicine', description: 'General adult medical care and chronic disease management.' },
-  { name: 'Cardiology Clinic', slug: 'cardiology', description: 'Comprehensive heart care, ECGs, and vascular diagnostics.' },
-  { name: 'Orthopedics Clinic', slug: 'orthopedics', description: 'Bone, joint, and muscle disorder specialist care.' },
-  { name: 'Ophthalmology Clinic', slug: 'ophthalmology', description: 'Eye exams, vision testing, and ocular disease care.' },
-  { name: 'Pediatrics Clinic', slug: 'pediatrics', description: 'Specialized healthcare for children, infants, and adolescents.' },
-  { name: 'Dermatology Clinic', slug: 'dermatology', description: 'Skin, hair, and nail disorder treatment.' },
-]
+const HOSPITAL = {
+  name: 'Jordan University Hospital',
+  shortName: 'JUH',
+  city: 'Amman',
+  logoPath: '/jordan-university-hospital-logo.png',
+}
 
-function generateSlots(clinicSlug: string) {
-  const slots = []
-  const now = new Date()
-  
-  // Generate slots for the next 3 days
-  for (let i = 0; i < 3; i++) {
-    const day = new Date(now)
-    day.setDate(now.getDate() + i)
-    
-    // 9:00 AM Slot
-    const start1 = new Date(day)
-    start1.setHours(9, 0, 0, 0)
-    const end1 = new Date(day)
-    end1.setHours(10, 0, 0, 0)
-
-    // 11:30 AM Slot
-    const start2 = new Date(day)
-    start2.setHours(11, 30, 0, 0)
-    const end2 = new Date(day)
-    end2.setHours(12, 30, 0, 0)
-
-    // 2:00 PM Slot
-    const start3 = new Date(day)
-    start3.setHours(14, 0, 0, 0)
-    const end3 = new Date(day)
-    end3.setHours(15, 0, 0, 0)
-
-    slots.push(
-      { startsAt: start1.toISOString(), endsAt: end1.toISOString(), capacity: 8, bookedCount: Math.floor(Math.random() * 8) },
-      { startsAt: start2.toISOString(), endsAt: end2.toISOString(), capacity: 5, bookedCount: Math.floor(Math.random() * 6) },
-      { startsAt: start3.toISOString(), endsAt: end3.toISOString(), capacity: 10, bookedCount: Math.floor(Math.random() * 10) }
-    )
-  }
-  return slots
+function clinicPreview(limit: number) {
+  return MOCK_CLINICS.slice(0, limit).map((clinic, index) => ({
+    ...clinic,
+    hospitalName: HOSPITAL.name,
+    hospitalShort: HOSPITAL.shortName,
+    slots: generateSlots(index),
+  }))
 }
 
 export async function GET(request: NextRequest) {
-  const limitParam = request.nextUrl.searchParams.get('limit')
-  const limit = Math.min(Math.max(parseInt(limitParam ?? '10', 10) || 10, 1), 50)
-  
+  const auth = await requireAdminApi()
+  if ('response' in auth) return auth.response
+
+  const limit = readLimit(request.nextUrl.searchParams.get('limit'), 10, 50)
+
+  return Response.json({
+    success: true,
+    mode: 'preview',
+    count: Math.min(limit, MOCK_CLINICS.length),
+    fetchedAt: new Date().toISOString(),
+    clinics: clinicPreview(limit),
+  })
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireAdminApi()
+  if ('response' in auth) return auth.response
+
+  const limit = readLimit(request.nextUrl.searchParams.get('limit'), 10, 50)
+  const selectedClinics = MOCK_CLINICS.slice(0, limit)
+
   await ready()
 
-  // Ensure default Hospital exists in DB
-  let hospital = await prisma.hospital.findFirst()
-  if (!hospital) {
-    hospital = await prisma.hospital.create({
-      data: {
-        name: 'Jordan University Hospital',
-        shortName: 'JUH',
-        city: 'Amman',
+  const hospital = await prisma.hospital.upsert({
+    where: { shortName: HOSPITAL.shortName },
+    update: HOSPITAL,
+    create: HOSPITAL,
+  })
+
+  let created = 0
+  let existing = 0
+  let slotsCreated = 0
+  let slotsExisting = 0
+  const clinics = []
+
+  for (const [index, mockClinic] of selectedClinics.entries()) {
+    const found = await prisma.clinic.findUnique({
+      where: { hospitalId_slug: { hospitalId: hospital.id, slug: mockClinic.slug } },
+      select: { id: true },
+    })
+
+    const clinic = await prisma.clinic.upsert({
+      where: { hospitalId_slug: { hospitalId: hospital.id, slug: mockClinic.slug } },
+      update: { name: mockClinic.name, description: mockClinic.description },
+      create: {
+        hospitalId: hospital.id,
+        name: mockClinic.name,
+        slug: mockClinic.slug,
+        description: mockClinic.description,
       },
     })
-  }
 
-  const selectedClinics = CLINICS.slice(0, limit)
-  const clinicsData = []
+    if (found) existing += 1
+    else created += 1
 
-  for (const c of selectedClinics) {
-    try {
-      // Check if Clinic already exists in DB
-      let clinic = await prisma.clinic.findFirst({
-        where: { hospitalId: hospital.id, slug: c.slug },
+    const slots = []
+    for (const slotData of generateSlots(index)) {
+      const startsAt = new Date(slotData.startsAt)
+      const foundSlot = await prisma.clinicAvailabilitySlot.findUnique({
+        where: { clinicId_startsAt: { clinicId: clinic.id, startsAt } },
+        select: { id: true },
+      })
+      const slot = await prisma.clinicAvailabilitySlot.upsert({
+        where: { clinicId_startsAt: { clinicId: clinic.id, startsAt } },
+        update: {
+          endsAt: new Date(slotData.endsAt),
+          capacity: slotData.capacity,
+          bookedCount: slotData.bookedCount,
+        },
+        create: {
+          clinicId: clinic.id,
+          startsAt,
+          endsAt: new Date(slotData.endsAt),
+          capacity: slotData.capacity,
+          bookedCount: slotData.bookedCount,
+        },
       })
 
-      if (!clinic) {
-        clinic = await prisma.clinic.create({
-          data: {
-            hospitalId: hospital.id,
-            name: c.name,
-            slug: c.slug,
-            description: c.description,
-          },
-        })
-      }
+      if (foundSlot) slotsExisting += 1
+      else slotsCreated += 1
 
-      // Generate and save slots
-      const generated = generateSlots(c.slug)
-      const syncedSlots = []
-
-      for (const slotData of generated) {
-        // Check if slot already exists for this clinic at startsAt
-        let slot = await prisma.clinicAvailabilitySlot.findUnique({
-          where: {
-            clinicId_startsAt: {
-              clinicId: clinic.id,
-              startsAt: new Date(slotData.startsAt),
-            },
-          },
-        })
-
-        if (!slot) {
-          slot = await prisma.clinicAvailabilitySlot.create({
-            data: {
-              clinicId: clinic.id,
-              startsAt: new Date(slotData.startsAt),
-              endsAt: new Date(slotData.endsAt),
-              capacity: slotData.capacity,
-              bookedCount: slotData.bookedCount,
-            },
-          })
-        }
-        syncedSlots.push(slot)
-      }
-
-      clinicsData.push({
-        ...c,
-        id: clinic.id,
-        hospitalName: hospital.name,
-        hospitalShort: hospital.shortName,
-        slots: syncedSlots.map((s) => ({
-          id: s.id,
-          clinicId: s.clinicId,
-          startsAt: s.startsAt.toISOString(),
-          endsAt: s.endsAt.toISOString(),
-          capacity: s.capacity,
-          bookedCount: s.bookedCount,
-        })),
-      })
-    } catch (err) {
-      // Fallback if db write fails
-      clinicsData.push({
-        ...c,
-        hospitalName: hospital.name,
-        hospitalShort: hospital.shortName,
-        slots: generateSlots(c.slug),
+      slots.push({
+        id: slot.id,
+        clinicId: slot.clinicId,
+        startsAt: slot.startsAt.toISOString(),
+        endsAt: slot.endsAt.toISOString(),
+        capacity: slot.capacity,
+        bookedCount: slot.bookedCount,
       })
     }
+
+    clinics.push({
+      id: clinic.id,
+      ...mockClinic,
+      hospitalName: hospital.name,
+      hospitalShort: hospital.shortName,
+      slots,
+    })
   }
 
   return Response.json({
     success: true,
-    count: clinicsData.length,
+    mode: 'sync',
+    count: clinics.length,
+    created,
+    existing,
+    slotsCreated,
+    slotsExisting,
     fetchedAt: new Date().toISOString(),
-    clinics: clinicsData,
+    clinics,
   })
 }

@@ -1,5 +1,5 @@
 import { UserRole } from '@/app/generated/prisma'
-import { getAllPrescriptions, getPrescriptionsForStaff } from '@/app/lib/clinical-data'
+import { getAllPrescriptions, getPrescriptionsForRole } from '@/app/lib/clinical-data'
 import { getSession } from '@/app/lib/session'
 
 export async function GET() {
@@ -12,8 +12,13 @@ export async function GET() {
     return Response.json({ prescriptions: await getAllPrescriptions() })
   }
 
-  if (session.role === UserRole.PHARMACY_STAFF) {
-    return Response.json({ prescriptions: await getPrescriptionsForStaff(session.userId) })
+  if (
+    session.role === UserRole.PHARMACY_STAFF ||
+    session.role === UserRole.PATIENT ||
+    session.role === UserRole.DOCTOR ||
+    session.role === UserRole.SPECIALIST
+  ) {
+    return Response.json({ prescriptions: await getPrescriptionsForRole(session.userId, session.role) })
   }
 
   return Response.json({ message: 'Forbidden' }, { status: 403 })

@@ -17,19 +17,25 @@ const quickLinks: Record<string, { href: string; label: string; description: str
   DOCTOR: [
     { href: '/dashboard/forward', label: 'Create Forward Note', description: 'Route a patient to a specialist clinic' },
     { href: '/dashboard/referrals', label: 'View My Referrals', description: 'See all referrals you have created' },
+    { href: '/dashboard/lab-tests', label: 'Lab Results', description: 'View lab results for your referred patients' },
+    { href: '/dashboard/prescriptions', label: 'Prescriptions', description: 'View prescriptions you created' },
   ],
   SPECIALIST: [
     { href: '/dashboard/queue', label: 'Referral Queue', description: 'Accept, reject, or forward referrals' },
+    { href: '/dashboard/lab-tests', label: 'Lab Results', description: 'View lab results linked to your referrals' },
+    { href: '/dashboard/prescriptions', label: 'Prescriptions', description: 'View prescriptions linked to your referrals' },
   ],
   PATIENT: [
     { href: '/dashboard/forwards', label: 'My Forwards', description: 'Track your active referrals' },
     { href: '/dashboard/visits', label: 'Visit History', description: 'View your past hospital visits' },
+    { href: '/dashboard/lab-tests', label: 'Lab Results', description: 'View completed lab results' },
+    { href: '/dashboard/prescriptions', label: 'Prescriptions', description: 'View prescription details' },
   ],
   LAB_STAFF: [
-    { href: '/dashboard/lab-tests', label: 'Lab Tests', description: 'Process pending lab test requests' },
+    { href: '/dashboard/lab-tests', label: 'Pending Lab Requests', description: 'View pending lab requests and submit results' },
   ],
   PHARMACY_STAFF: [
-    { href: '/dashboard/prescriptions', label: 'Prescriptions', description: 'Dispense pending prescriptions' },
+    { href: '/dashboard/prescriptions', label: 'Prescriptions', description: 'View prescriptions and dispense medication' },
   ],
   SUPER_ADMIN: [
     { href: '/dashboard/users', label: 'Manage Users', description: 'View, activate, and change user roles' },

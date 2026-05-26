@@ -1,114 +1,111 @@
 import { type NextRequest } from 'next/server'
-import { prisma, ready } from '@/app/lib/prisma'
 import bcrypt from 'bcryptjs'
+import { requireAdminApi } from '@/app/lib/api-auth'
+import { generateStudents, readLimit, type MockStudent } from '@/app/lib/integration-mock-data'
+import { prisma, ready } from '@/app/lib/prisma'
 
-const FIRST_NAMES = ['Ahmad', 'Sara', 'Omar', 'Lina', 'Khaled', 'Noor', 'Fadi', 'Reem', 'Tariq', 'Hala', 'Yousef', 'Dana', 'Mazen', 'Aya', 'Sami', 'Layla', 'Rami', 'Dina', 'Zaid', 'Mona']
-const LAST_NAMES = ['Haddad', 'Nasser', 'Khoury', 'Masri', 'Qasem', 'Salameh', 'Zahran', 'Dawood', 'Abdallat', 'Abu Zaid', 'Al-Khatib', 'Hamdan', 'Jarrar', 'Obeidat', 'Tawfiq']
-const FACULTIES = ['Engineering', 'Medicine', 'Science', 'IT', 'Arts', 'Law', 'Business', 'Pharmacy', 'Nursing', 'Dentistry']
-const GENDERS = ['MALE', 'FEMALE'] as const
-
-function randomInt(min: number, max: number) {
-  return Math.floor(Math.random() * (max - min + 1)) + min
-}
-
-function randomItem<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]
-}
-
-function generateUniId() {
-  return `02${randomInt(30000, 99999)}`
-}
-
-function generateDob() {
-  const year = randomInt(2000, 2006)
-  const month = String(randomInt(1, 12)).padStart(2, '0')
-  const day = String(randomInt(1, 28)).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function generatePhone() {
-  return `+9627${randomInt(90000000, 99999999)}`
-}
-
-function generateStudent() {
-  const gender = randomItem(GENDERS)
-  const firstName = randomItem(FIRST_NAMES)
-  const lastName = randomItem(LAST_NAMES)
+function previewPayload(students: MockStudent[]) {
   return {
-    uniId: generateUniId(),
-    fullName: `${firstName} ${lastName}`,
-    gender,
-    dob: generateDob(),
-    phoneNumber: generatePhone(),
-    faculty: randomItem(FACULTIES),
-    email: `${firstName.toLowerCase()}.${lastName.toLowerCase().replace(' ', '')}@ju.edu.jo`,
+    success: true,
+    mode: 'preview',
+    count: students.length,
+    fetchedAt: new Date().toISOString(),
+    students,
   }
+}
+
+async function syncStudent(student: MockStudent, passwordHash: string) {
+  const existing = await prisma.patientProfile.findUnique({
+    where: { uniId: student.uniId },
+    select: { id: true, userId: true },
+  })
+
+  if (existing) {
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: existing.userId },
+        data: { email: student.email, role: 'PATIENT', isActive: true },
+      }),
+      prisma.patientProfile.update({
+        where: { id: existing.id },
+        data: {
+          fullName: student.fullName,
+          gender: student.gender,
+          dob: new Date(student.dob),
+          phoneNumber: student.phone,
+          faculty: student.faculty,
+        },
+      }),
+    ])
+    return { ...student, syncStatus: 'EXISTS' as const }
+  }
+
+  const user = await prisma.user.upsert({
+    where: { username: student.uniId },
+    update: {
+      passwordHash,
+      plainPassword: 'password123',
+      email: student.email,
+      role: 'PATIENT',
+      isActive: true,
+    },
+    create: {
+      username: student.uniId,
+      passwordHash,
+      plainPassword: 'password123',
+      email: student.email,
+      role: 'PATIENT',
+    },
+    select: { id: true },
+  })
+
+  await prisma.patientProfile.create({
+    data: {
+      userId: user.id,
+      fullName: student.fullName,
+      uniId: student.uniId,
+      gender: student.gender,
+      dob: new Date(student.dob),
+      phoneNumber: student.phone,
+      faculty: student.faculty,
+    },
+  })
+
+  return { ...student, syncStatus: 'CREATED' as const }
 }
 
 export async function GET(request: NextRequest) {
-  const countParam = request.nextUrl.searchParams.get('count')
-  const count = Math.min(Math.max(parseInt(countParam ?? '100', 10) || 100, 1), 500)
+  const auth = await requireAdminApi()
+  if ('response' in auth) return auth.response
 
-  const students = Array.from({ length: count }, generateStudent)
+  const count = readLimit(request.nextUrl.searchParams.get('count'), 100, 500)
+  return Response.json(previewPayload(generateStudents(count)))
+}
 
-  // Ensure unique IDs
-  const seen = new Set<string>()
-  const unique = students.filter((s) => {
-    if (seen.has(s.uniId)) return false
-    seen.add(s.uniId)
-    return true
-  })
+export async function POST(request: NextRequest) {
+  const auth = await requireAdminApi()
+  if ('response' in auth) return auth.response
+
+  const count = readLimit(request.nextUrl.searchParams.get('count'), 100, 500)
+  const students = generateStudents(count)
+  const passwordHash = await bcrypt.hash('password123', 10)
 
   await ready()
 
-  // Save new students to the database
-  const passwordHash = await bcrypt.hash('password123', 10)
   const syncedStudents = []
-
-  for (const s of unique) {
-    try {
-      // Check if patient already exists (checks for new data only)
-      let patientProfile = await prisma.patientProfile.findUnique({
-        where: { uniId: s.uniId },
-      })
-
-      if (!patientProfile) {
-        // Create user and profile
-        const user = await prisma.user.create({
-          data: {
-            username: s.uniId,
-            passwordHash,
-            plainPassword: 'password123',
-            email: s.email,
-            role: 'PATIENT',
-            patientProfile: {
-              create: {
-                fullName: s.fullName,
-                uniId: s.uniId,
-                gender: s.gender,
-                dob: new Date(s.dob),
-                phoneNumber: s.phoneNumber,
-                faculty: s.faculty,
-              },
-            },
-          },
-          include: {
-            patientProfile: true,
-          },
-        })
-        patientProfile = user.patientProfile
-        syncedStudents.push({ ...s, syncStatus: 'CREATED' })
-      } else {
-        syncedStudents.push({ ...s, syncStatus: 'EXISTS' })
-      }
-    } catch {
-      syncedStudents.push({ ...s, syncStatus: 'ERROR' })
-    }
+  for (const student of students) {
+    syncedStudents.push(await syncStudent(student, passwordHash))
   }
+
+  const created = syncedStudents.filter((student) => student.syncStatus === 'CREATED').length
+  const existing = syncedStudents.length - created
 
   return Response.json({
     success: true,
+    mode: 'sync',
     count: syncedStudents.length,
+    created,
+    existing,
     fetchedAt: new Date().toISOString(),
     students: syncedStudents,
   })
