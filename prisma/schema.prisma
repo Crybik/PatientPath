@@ -29,6 +29,7 @@ enum Gender {
 enum ReferralStatus {
   PENDING
   ACCEPTED
+  SCHEDULED
   FORWARDED
   REJECTED
   IN_PROGRESS
@@ -40,9 +41,15 @@ enum ReferralStatus {
 enum ReferralEventType {
   CREATED
   ACCEPTED
+  SCHEDULED
   FORWARDED
   REJECTED
+  IN_PROGRESS
   COMPLETED
+  STATUS_UPDATED
+  INFORMATION_REQUESTED
+  FEEDBACK_ADDED
+  ATTACHMENT_ADDED
 
   @@map("referral_event_type")
 }
@@ -65,8 +72,11 @@ model User {
   processedLabTests      LabTest[]       @relation("ProcessedLabTests")
   createdPrescriptions   Prescription[]  @relation("CreatedPrescriptions")
   dispensedPrescriptions Prescription[]  @relation("DispensedPrescriptions")
+  uploadedAttachments    Attachment[]    @relation("UploadedAttachments")
   notifications          Notification[]
   reports                Report[]
+  passwordResetTokens    PasswordResetToken[]
+  supportRequests        SupportRequest[]
 
   @@map("users")
 }
@@ -184,8 +194,11 @@ model Referral {
   doctorNote          String                  @map("doctor_note") @db.Text
   specialistNote      String?                 @map("specialist_note") @db.Text
   rejectionReason     String?                 @map("rejection_reason") @db.Text
+  feedback            String?                 @db.Text
   scheduledAt         DateTime?               @map("scheduled_at") @db.Timestamptz()
   acceptedAt          DateTime?               @map("accepted_at") @db.Timestamptz()
+  completedAt         DateTime?               @map("completed_at") @db.Timestamptz()
+  feedbackAt          DateTime?               @map("feedback_at") @db.Timestamptz()
   createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt           DateTime                @updatedAt @map("updated_at") @db.Timestamptz()
   patient             PatientProfile          @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -262,12 +275,20 @@ model Prescription {
 }
 
 model Attachment {
-  id         Int      @id @default(autoincrement())
-  referralId Int      @map("referral_id")
-  fileName   String   @db.VarChar(240)
-  fileType   String   @db.VarChar(80)
-  uploadDate DateTime @default(now()) @map("upload_date") @db.Timestamptz()
-  referral   Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  id                   Int       @id @default(autoincrement())
+  referralId           Int       @map("referral_id")
+  uploadedById         Int?      @map("uploaded_by_id")
+  fileName             String    @db.VarChar(240)
+  fileType             String    @db.VarChar(120)
+  fileSize             Int?      @map("file_size")
+  storageProvider      String    @default("R2") @map("storage_provider") @db.VarChar(40)
+  status               String    @default("UPLOADED") @db.VarChar(40)
+  r2Key                String?   @map("r2_key") @db.VarChar(512)
+  cloudflareImageId    String?   @map("cloudflare_image_id") @db.VarChar(128)
+  cloudflareVariantUrl String?   @map("cloudflare_variant_url") @db.Text
+  uploadDate           DateTime  @default(now()) @map("upload_date") @db.Timestamptz()
+  referral             Referral  @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  uploadedBy           User?     @relation("UploadedAttachments", fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@map("attachments")
 }
@@ -293,4 +314,37 @@ model Report {
   generatedBy   User     @relation(fields: [generatedById], references: [id], onDelete: Restrict)
 
   @@map("reports")
+}
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz()
+  usedAt    DateTime? @map("used_at") @db.Timestamptz()
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model SupportRequest {
+  id          Int       @id @default(autoincrement())
+  userId      Int?      @map("user_id")
+  name        String    @db.VarChar(160)
+  email       String    @db.VarChar(160)
+  role        String?   @db.VarChar(80)
+  category    String    @default("Technical Issue") @db.VarChar(80)
+  subject     String    @db.VarChar(180)
+  message     String    @db.Text
+  status      String    @default("OPEN") @db.VarChar(40)
+  adminNote   String?   @map("admin_note") @db.Text
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz()
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("support_requests")
 }

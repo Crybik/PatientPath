@@ -2,14 +2,17 @@
 
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  addReferralFeedback,
   acceptForward,
   completeReferral,
   forwardToAnotherClinic,
+  requestAdditionalInformation,
   rejectForward,
+  updateReferralStatus,
 } from '@/app/actions/referrals'
 import type { SerializedHospital, SerializedReferral, SerializedSlot } from '@/app/lib/dashboard-types'
 import { formatDateTime } from '@/app/ui/dashboard-format'
-import { IconCheck, IconClipboard, IconForward, IconX } from '@/app/ui/icons'
+import { IconCheck, IconClipboard, IconForward, IconSearch, IconX } from '@/app/ui/icons'
 import { FadeInUp, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 import { ReferralCard } from '@/app/ui/referral-card'
 import { ReferralClinicalActions } from '@/app/ui/referral-clinical-actions'
@@ -25,6 +28,7 @@ export function SpecialistQueue({
   const [referrals, setReferrals] = useState(initialReferrals)
   const [message, setMessage] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>('ALL')
+  const [search, setSearch] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -39,12 +43,26 @@ export function SpecialistQueue({
     return () => clearInterval(t)
   }, [refresh])
 
-  const filtered = filter === 'ALL' ? referrals : referrals.filter((r) => r.status === filter)
+  const filtered = referrals.filter((referral) => {
+    const statusMatches = filter === 'ALL' || referral.status === filter
+    const normalized = search.trim().toLowerCase()
+    if (!statusMatches) return false
+    if (!normalized) return true
+    return [
+      referral.patient.fullName,
+      referral.patient.uniId,
+      referral.status,
+      referral.hospital.name,
+      referral.clinic.name,
+      referral.createdAt.slice(0, 10),
+      referral.scheduledAt?.slice(0, 10) ?? '',
+    ].join(' ').toLowerCase().includes(normalized)
+  })
   const pending = referrals.filter((r) => r.status === 'PENDING').length
   const accepted = referrals.filter((r) => r.status === 'ACCEPTED').length
   const completed = referrals.filter((r) => r.status === 'COMPLETED').length
 
-  const filters = ['ALL', 'PENDING', 'ACCEPTED', 'FORWARDED', 'REJECTED', 'COMPLETED']
+  const filters = ['ALL', 'PENDING', 'ACCEPTED', 'SCHEDULED', 'FORWARDED', 'REJECTED', 'IN_PROGRESS', 'COMPLETED']
 
   return (
     <div className="space-y-6">
@@ -67,21 +85,31 @@ export function SpecialistQueue({
         <StatCard label="Completed" value={completed} color="text-blue-400" />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {filters.map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
-              filter === f
-                ? 'bg-accent text-white'
-                : 'border border-border text-muted hover:border-accent/50 hover:text-primary'
-            }`}
-          >
-            {f === 'ALL' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase()}
-          </button>
-        ))}
+      <div className="flex flex-col gap-3">
+        <label className="relative block">
+          <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by student, ID, date, status, hospital, or clinic"
+            className="w-full rounded-lg border border-border bg-surface px-9 py-2 text-sm text-primary outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/15"
+          />
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {filters.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
+                filter === f
+                  ? 'bg-accent text-white'
+                  : 'border border-border text-muted hover:border-accent/50 hover:text-primary'
+              }`}
+            >
+              {f === 'ALL' ? 'All' : f.charAt(0) + f.slice(1).toLowerCase().replace('_', ' ')}
+            </button>
+          ))}
+        </div>
       </div>
 
       {message && (
@@ -105,8 +133,13 @@ export function SpecialistQueue({
                         <RejectForm referralId={referral.id} onChanged={refresh} />
                       </>
                     )}
-                    {(referral.status === 'ACCEPTED' || referral.status === 'FORWARDED') && (
+                    {(['ACCEPTED', 'SCHEDULED', 'FORWARDED', 'IN_PROGRESS'].includes(referral.status)) && (
                       <CompleteForm referralId={referral.id} onChanged={refresh} />
+                    )}
+                    <StatusUpdateForm referralId={referral.id} currentStatus={referral.status} onChanged={refresh} />
+                    <RequestInfoForm referralId={referral.id} onChanged={refresh} />
+                    {referral.status === 'COMPLETED' && (
+                      <FeedbackForm referralId={referral.id} onChanged={refresh} />
                     )}
                     <ForwardAgainForm referral={referral} hospitals={hospitals} onChanged={refresh} />
                   </div>
@@ -173,6 +206,76 @@ function CompleteForm({ referralId, onChanged }: { referralId: number; onChanged
       {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
       <button type="submit" disabled={pending} className="mt-2 w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
         {pending ? 'Completing...' : 'Complete'}
+      </button>
+    </form>
+  )
+}
+
+function StatusUpdateForm({
+  referralId,
+  currentStatus,
+  onChanged,
+}: {
+  referralId: number
+  currentStatus: string
+  onChanged: () => Promise<void>
+}) {
+  const [state, formAction, pending] = useActionState(updateReferralStatus, undefined)
+  useEffect(() => { if (state?.success) void onChanged() }, [onChanged, state?.success, state?.version])
+
+  return (
+    <form action={formAction} className="rounded-lg border border-cyan-200 bg-cyan-50/50 p-3">
+      <input type="hidden" name="referralId" value={referralId} />
+      <label className="block text-xs font-semibold text-cyan-700">
+        Update Status
+        <select name="status" defaultValue={currentStatus} className="mt-2 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent">
+          {['PENDING', 'ACCEPTED', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED'].map((status) => (
+            <option key={status} value={status}>{status.replace('_', ' ')}</option>
+          ))}
+        </select>
+      </label>
+      <textarea name="note" rows={2} required placeholder="Status note..." className="mt-2 w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent" />
+      {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
+      <button type="submit" disabled={pending} className="mt-2 w-full rounded-lg bg-cyan-600 px-3 py-2 text-xs font-semibold text-white hover:bg-cyan-700 disabled:opacity-50">
+        {pending ? 'Updating...' : 'Update Status'}
+      </button>
+    </form>
+  )
+}
+
+function RequestInfoForm({ referralId, onChanged }: { referralId: number; onChanged: () => Promise<void> }) {
+  const [state, formAction, pending] = useActionState(requestAdditionalInformation, undefined)
+  useEffect(() => { if (state?.success) void onChanged() }, [onChanged, state?.success, state?.version])
+
+  return (
+    <form action={formAction} className="rounded-lg border border-yellow-200 bg-yellow-50/50 p-3">
+      <input type="hidden" name="referralId" value={referralId} />
+      <label className="block text-xs font-semibold text-yellow-700">
+        Request More Info
+        <textarea name="note" rows={2} required placeholder="What information is needed?" className="mt-2 w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent" />
+      </label>
+      {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
+      <button type="submit" disabled={pending} className="mt-2 w-full rounded-lg bg-yellow-600 px-3 py-2 text-xs font-semibold text-white hover:bg-yellow-700 disabled:opacity-50">
+        {pending ? 'Sending...' : 'Request Info'}
+      </button>
+    </form>
+  )
+}
+
+function FeedbackForm({ referralId, onChanged }: { referralId: number; onChanged: () => Promise<void> }) {
+  const [state, formAction, pending] = useActionState(addReferralFeedback, undefined)
+  useEffect(() => { if (state?.success) void onChanged() }, [onChanged, state?.success, state?.version])
+
+  return (
+    <form action={formAction} className="rounded-lg border border-teal-200 bg-teal-50/50 p-3">
+      <input type="hidden" name="referralId" value={referralId} />
+      <label className="block text-xs font-semibold text-teal-700">
+        Completion Feedback
+        <textarea name="feedback" rows={2} required placeholder="Medical summary or post-referral feedback..." className="mt-2 w-full resize-none rounded-lg border border-border bg-surface px-3 py-2 text-sm text-primary outline-none focus:border-accent" />
+      </label>
+      {state?.message && <p className={`mt-1 text-xs ${state.success ? 'text-success' : 'text-danger'}`}>{state.message}</p>}
+      <button type="submit" disabled={pending} className="mt-2 w-full rounded-lg bg-teal-600 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50">
+        {pending ? 'Saving...' : 'Add Feedback'}
       </button>
     </form>
   )

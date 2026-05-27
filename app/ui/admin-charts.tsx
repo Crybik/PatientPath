@@ -21,6 +21,7 @@ type AdminStats = {
 const STATUS_COLORS: Record<string, string> = {
   PENDING: '#d97706',
   ACCEPTED: '#059669',
+  SCHEDULED: '#0891b2',
   FORWARDED: '#2563eb',
   REJECTED: '#dc2626',
   IN_PROGRESS: '#7c3aed',
@@ -173,6 +174,7 @@ export function AdminOverviewCharts({ stats }: { stats: AdminStats }) {
         {[
           { href: '/dashboard/users', label: 'Manage Users', desc: 'View, edit, freeze users', icon: <IconUsers className="w-5 h-5" /> },
           { href: '/dashboard/all-referrals', label: 'All Referrals', desc: 'System-wide referrals', icon: <IconClipboard className="w-5 h-5" /> },
+          { href: '/dashboard/reports', label: 'Reports', desc: 'Generate operational reports', icon: <IconChart className="w-5 h-5" /> },
           { href: '/dashboard/integrations', label: 'Integrations', desc: 'API endpoints & worker', icon: <IconPlug className="w-5 h-5" /> },
           { href: '/dashboard/db', label: 'Database', desc: 'Browse DB tables', icon: <IconDatabase className="w-5 h-5" /> },
         ].map((link) => (

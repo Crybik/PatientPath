@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
 import { UserRole } from '@/app/generated/prisma'
-import { getPatientDashboard } from '@/app/lib/clinical-data'
+import { getPatientMedicalHistory } from '@/app/lib/clinical-data'
 import { getSession } from '@/app/lib/session'
 import { PatientVisits } from '@/app/ui/patient-visits'
 
-export const metadata = { title: 'Visit History - PatientPath' }
+export const metadata = { title: 'Medical History - PatientPath' }
 
 export default async function VisitsPage() {
   const session = await getSession()
@@ -13,7 +13,7 @@ export default async function VisitsPage() {
     redirect('/dashboard')
   }
 
-  const data = await getPatientDashboard(session.userId)
+  const data = await getPatientMedicalHistory(session.userId)
   if (!data) {
     return (
       <div className="rounded-xl border border-warning/20 bg-warning/5 p-6">
@@ -22,5 +22,13 @@ export default async function VisitsPage() {
     )
   }
 
-  return <PatientVisits patient={data.patient} visits={data.visits} />
+  return (
+    <PatientVisits
+      patient={data.patient}
+      visits={data.visits}
+      referrals={data.referrals}
+      labTests={data.labTests}
+      prescriptions={data.prescriptions}
+    />
+  )
 }

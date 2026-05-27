@@ -251,9 +251,13 @@ const DB_TABLES = [
   { name: 'clinics', model: 'clinic' },
   { name: 'referrals', model: 'referral' },
   { name: 'referral_events', model: 'referralEvent' },
+  { name: 'attachments', model: 'attachment' },
   { name: 'lab_tests', model: 'labTest' },
   { name: 'prescriptions', model: 'prescription' },
   { name: 'notifications', model: 'notification' },
+  { name: 'reports', model: 'report' },
+  { name: 'support_requests', model: 'supportRequest' },
+  { name: 'password_reset_tokens', model: 'passwordResetToken' },
   { name: 'patient_visits', model: 'patientVisit' },
   { name: 'clinic_availability_slots', model: 'clinicAvailabilitySlot' },
 ] as const
@@ -274,9 +278,13 @@ async function countDbRows(model: DbModel) {
     case 'clinic': return prisma.clinic.count()
     case 'referral': return prisma.referral.count()
     case 'referralEvent': return prisma.referralEvent.count()
+    case 'attachment': return prisma.attachment.count()
     case 'labTest': return prisma.labTest.count()
     case 'prescription': return prisma.prescription.count()
     case 'notification': return prisma.notification.count()
+    case 'report': return prisma.report.count()
+    case 'supportRequest': return prisma.supportRequest.count()
+    case 'passwordResetToken': return prisma.passwordResetToken.count()
     case 'patientVisit': return prisma.patientVisit.count()
     case 'clinicAvailabilitySlot': return prisma.clinicAvailabilitySlot.count()
   }
@@ -291,9 +299,13 @@ async function findDbRows(model: DbModel, skip: number, take: number) {
     case 'clinic': return prisma.clinic.findMany({ take, skip, orderBy: { id: 'desc' } })
     case 'referral': return prisma.referral.findMany({ take, skip, orderBy: { id: 'desc' } })
     case 'referralEvent': return prisma.referralEvent.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'attachment': return prisma.attachment.findMany({ take, skip, orderBy: { id: 'desc' } })
     case 'labTest': return prisma.labTest.findMany({ take, skip, orderBy: { id: 'desc' } })
     case 'prescription': return prisma.prescription.findMany({ take, skip, orderBy: { id: 'desc' } })
     case 'notification': return prisma.notification.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'report': return prisma.report.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'supportRequest': return prisma.supportRequest.findMany({ take, skip, orderBy: { id: 'desc' } })
+    case 'passwordResetToken': return prisma.passwordResetToken.findMany({ take, skip, orderBy: { id: 'desc' } })
     case 'patientVisit': return prisma.patientVisit.findMany({ take, skip, orderBy: { id: 'desc' } })
     case 'clinicAvailabilitySlot': return prisma.clinicAvailabilitySlot.findMany({ take, skip, orderBy: { id: 'desc' } })
   }

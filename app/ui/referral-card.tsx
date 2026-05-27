@@ -6,6 +6,30 @@ import type { SerializedReferral } from '@/app/lib/dashboard-types'
 import { formatDateTime, statusColor, statusLabel } from '@/app/ui/dashboard-format'
 import { AnimatePresence, motion } from '@/app/ui/motion'
 
+function fileSizeLabel(size: number | null) {
+  if (!size) return 'Unknown size'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function eventTitle(type: string) {
+  const labels: Record<string, string> = {
+    CREATED: 'Forward created',
+    ACCEPTED: 'Accepted by specialist',
+    SCHEDULED: 'Scheduled',
+    FORWARDED: 'Forwarded to another clinic',
+    REJECTED: 'Rejected',
+    IN_PROGRESS: 'Marked in progress',
+    COMPLETED: 'Completed',
+    STATUS_UPDATED: 'Status updated',
+    INFORMATION_REQUESTED: 'Additional information requested',
+    FEEDBACK_ADDED: 'Feedback added',
+    ATTACHMENT_ADDED: 'Attachment added',
+  }
+  return labels[type] ?? type
+}
+
 export function ReferralCard({
   referral,
   children,
@@ -90,10 +114,42 @@ export function ReferralCard({
                 </div>
               </div>
 
+              {referral.feedback && (
+                <div className="mt-4 rounded-lg border border-success/20 bg-success/5 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-success">Referral feedback</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-primary-soft">{referral.feedback}</p>
+                </div>
+              )}
+
               {referral.rejectionReason && (
                 <div className="mt-4 rounded-lg border border-danger/20 bg-danger/5 p-3">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-danger">Rejection reason</p>
                   <p className="mt-1 text-sm text-primary-soft">{referral.rejectionReason}</p>
+                </div>
+              )}
+
+              {referral.attachments.length > 0 && (
+                <div className="mt-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Attachments</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {referral.attachments.map((attachment) => (
+                      <a
+                        key={attachment.id}
+                        href={attachment.downloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-lg border border-border bg-surface-elevated p-3 text-sm transition-all hover:border-accent/40 hover:text-accent"
+                      >
+                        <span className="block font-semibold text-primary">{attachment.fileName}</span>
+                        <span className="mt-1 block text-xs text-muted">
+                          {attachment.fileType} · {fileSizeLabel(attachment.fileSize)}
+                        </span>
+                        {attachment.uploadedByName && (
+                          <span className="mt-1 block text-xs text-muted">Uploaded by {attachment.uploadedByName}</span>
+                        )}
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -114,13 +170,7 @@ export function ReferralCard({
                         )}
                       </div>
                       <div className="pb-3">
-                        <p className="text-sm font-medium text-primary">
-                          {event.type === 'CREATED' && 'Forward created'}
-                          {event.type === 'ACCEPTED' && 'Accepted by specialist'}
-                          {event.type === 'FORWARDED' && 'Forwarded to another clinic'}
-                          {event.type === 'REJECTED' && 'Rejected'}
-                          {event.type === 'COMPLETED' && 'Completed'}
-                        </p>
+                        <p className="text-sm font-medium text-primary">{eventTitle(event.type)}</p>
                         <p className="text-xs text-muted">
                           {event.actorName} · {formatDateTime(event.createdAt)}
                         </p>

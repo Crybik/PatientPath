@@ -3,7 +3,7 @@ import type { DashboardRole } from '@/app/lib/dashboard-types'
 import { getSession } from '@/app/lib/session'
 import { DashboardShell } from '@/app/ui/dashboard-shell'
 import { UserRole } from '@/app/generated/prisma'
-import { IconChart, IconClipboard, IconFlask, IconForward, IconHome, IconPill, IconUsers } from '@/app/ui/icons'
+import { IconChart, IconClipboard, IconFlask, IconForward, IconHome, IconPill, IconUsers, IconAlert } from '@/app/ui/icons'
 
 const navByRole: Record<string, { href: string; label: string; icon?: React.ReactNode }[]> = {
   [UserRole.DOCTOR]: [
@@ -22,7 +22,7 @@ const navByRole: Record<string, { href: string; label: string; icon?: React.Reac
   [UserRole.PATIENT]: [
     { href: '/dashboard', label: 'Overview', icon: <IconHome className="w-4 h-4" /> },
     { href: '/dashboard/forwards', label: 'My Forwards', icon: <IconForward className="w-4 h-4" /> },
-    { href: '/dashboard/visits', label: 'Visit History', icon: <IconClipboard className="w-4 h-4" /> },
+    { href: '/dashboard/visits', label: 'Medical History', icon: <IconClipboard className="w-4 h-4" /> },
     { href: '/dashboard/lab-tests', label: 'Lab Results', icon: <IconFlask className="w-4 h-4" /> },
     { href: '/dashboard/prescriptions', label: 'Prescriptions', icon: <IconPill className="w-4 h-4" /> },
   ],
@@ -38,6 +38,8 @@ const navByRole: Record<string, { href: string; label: string; icon?: React.Reac
     { href: '/dashboard', label: 'Overview', icon: <IconChart className="w-4 h-4" /> },
     { href: '/dashboard/users', label: 'Users', icon: <IconUsers className="w-4 h-4" /> },
     { href: '/dashboard/all-referrals', label: 'All Referrals', icon: <IconClipboard className="w-4 h-4" /> },
+    { href: '/dashboard/reports', label: 'Reports', icon: <IconChart className="w-4 h-4" /> },
+    { href: '/dashboard/support', label: 'Support', icon: <IconAlert className="w-4 h-4" /> },
     { href: '/dashboard/lab-tests', label: 'Lab Tests', icon: <IconFlask className="w-4 h-4" /> },
     { href: '/dashboard/prescriptions', label: 'Prescriptions', icon: <IconPill className="w-4 h-4" /> },
     { href: '/dashboard/integrations', label: 'Integrations', icon: <IconForward className="w-4 h-4" /> },

@@ -369,6 +369,10 @@ function StepPatientLookup({
                 <p className="text-xs text-muted">Active Forwards</p>
                 <p className="font-medium text-primary">{lookup.referrals.length}</p>
               </div>
+              <div>
+                <p className="text-xs text-muted">Lab Results</p>
+                <p className="font-medium text-primary">{lookup.labTests.length}</p>
+              </div>
               {lookup.patient.faculty && (
                 <div>
                   <p className="text-xs text-muted">Faculty</p>
@@ -394,6 +398,44 @@ function StepPatientLookup({
                     </div>
                     <p className="mt-2 text-sm font-medium text-primary">{v.summary}</p>
                     <p className="mt-1 text-xs text-muted leading-relaxed">{v.notes}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {lookup.labTests.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Lab Results</h4>
+              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                {lookup.labTests.map((test) => (
+                  <div key={test.id} className="rounded-lg border border-border-subtle bg-background p-3">
+                    <div className="flex justify-between gap-3">
+                      <p className="text-sm font-semibold text-primary">{test.testType}</p>
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">{test.status}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">Requested: {formatDateTime(test.requestDate)}</p>
+                    <p className="mt-2 text-sm text-primary-soft">{test.result ?? 'Result pending.'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {lookup.prescriptions.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">Prescriptions</h4>
+              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                {lookup.prescriptions.map((rx) => (
+                  <div key={rx.id} className="rounded-lg border border-border-subtle bg-background p-3">
+                    <div className="flex justify-between gap-3">
+                      <p className="text-sm font-semibold text-primary">{rx.medicationName}</p>
+                      <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
+                        {rx.isDispensed ? 'Dispensed' : 'Pending'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-primary-soft">{rx.dosage} · {rx.frequency} · {rx.duration}</p>
+                    <p className="mt-1 text-xs text-muted">Prescribed: {formatDateTime(rx.createdAt)}</p>
                   </div>
                 ))}
               </div>

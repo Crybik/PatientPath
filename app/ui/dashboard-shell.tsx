@@ -125,6 +125,15 @@ export function DashboardShell({
             })}
           </nav>
 
+          <div className="mt-4 border-t border-border pt-4">
+            <Link href="/support" className="block rounded-lg px-3 py-2 text-sm font-medium text-primary-soft hover:bg-surface-elevated hover:text-primary">
+              Contact Support
+            </Link>
+            <Link href="/about" className="block rounded-lg px-3 py-2 text-sm font-medium text-primary-soft hover:bg-surface-elevated hover:text-primary">
+              About
+            </Link>
+          </div>
+
           {/* User section */}
           <div className="mt-auto pt-5 hidden lg:block border-t border-border">
             <div className="flex items-center justify-between px-2">

@@ -56,7 +56,18 @@ export type SerializedSlot = {
 
 export type SerializedReferralEvent = {
   id: number
-  type: 'CREATED' | 'ACCEPTED' | 'FORWARDED' | 'REJECTED' | 'COMPLETED'
+  type:
+    | 'CREATED'
+    | 'ACCEPTED'
+    | 'SCHEDULED'
+    | 'FORWARDED'
+    | 'REJECTED'
+    | 'IN_PROGRESS'
+    | 'COMPLETED'
+    | 'STATUS_UPDATED'
+    | 'INFORMATION_REQUESTED'
+    | 'FEEDBACK_ADDED'
+    | 'ATTACHMENT_ADDED'
   note: string | null
   actorName: string
   actorRole: DashboardRole | null
@@ -67,14 +78,31 @@ export type SerializedReferralEvent = {
   createdAt: string
 }
 
+export type SerializedAttachment = {
+  id: number
+  fileName: string
+  fileType: string
+  fileSize: number | null
+  storageProvider: string
+  status: string
+  cloudflareImageId: string | null
+  cloudflareVariantUrl: string | null
+  uploadedByName: string | null
+  uploadDate: string
+  downloadUrl: string
+}
+
 export type SerializedReferral = {
   id: number
-  status: 'PENDING' | 'ACCEPTED' | 'FORWARDED' | 'REJECTED' | 'IN_PROGRESS' | 'COMPLETED'
+  status: 'PENDING' | 'ACCEPTED' | 'SCHEDULED' | 'FORWARDED' | 'REJECTED' | 'IN_PROGRESS' | 'COMPLETED'
   doctorNote: string
   specialistNote: string | null
   rejectionReason: string | null
+  feedback: string | null
   scheduledAt: string | null
   acceptedAt: string | null
+  completedAt: string | null
+  feedbackAt: string | null
   createdAt: string
   updatedAt: string
   patient: SerializedPatient
@@ -90,6 +118,7 @@ export type SerializedReferral = {
   clinic: SerializedClinic
   slot: SerializedSlot | null
   events: SerializedReferralEvent[]
+  attachments: SerializedAttachment[]
 }
 
 export type SerializedLabTest = {
@@ -134,4 +163,6 @@ export type PatientLookupResponse = {
   patient: SerializedPatient
   visits: SerializedVisit[]
   referrals: SerializedReferral[]
+  labTests: SerializedLabTest[]
+  prescriptions: SerializedPrescription[]
 }

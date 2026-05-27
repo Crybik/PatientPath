@@ -170,6 +170,15 @@ export default function AuthForm({
             {altLabel}
           </Link>
         </p>
+        {!withRole && (
+          <Link href="/reset-password" className="mt-3 block text-sm font-medium text-accent hover:text-accent-bright transition-colors">
+            Forgot password?
+          </Link>
+        )}
+        <div className="mt-4 flex gap-3 text-xs text-muted">
+          <Link href="/about" className="hover:text-accent">About</Link>
+          <Link href="/support" className="hover:text-accent">Support</Link>
+        </div>
       </div>
     </div>
   )

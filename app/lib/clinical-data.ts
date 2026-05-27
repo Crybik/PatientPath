@@ -48,6 +48,17 @@ export const referralInclude = {
       slot: true,
     },
   },
+  attachments: {
+    orderBy: { uploadDate: 'desc' },
+    include: {
+      uploadedBy: {
+        include: {
+          staffProfile: true,
+          patientProfile: true,
+        },
+      },
+    },
+  },
 } satisfies Prisma.ReferralInclude
 
 type ReferralWithRelations = Prisma.ReferralGetPayload<{
@@ -166,8 +177,11 @@ export function serializeReferral(
     doctorNote: referral.doctorNote,
     specialistNote: referral.specialistNote,
     rejectionReason: referral.rejectionReason,
+    feedback: referral.feedback,
     scheduledAt: iso(referral.scheduledAt),
     acceptedAt: iso(referral.acceptedAt),
+    completedAt: iso(referral.completedAt),
+    feedbackAt: iso(referral.feedbackAt),
     createdAt: referral.createdAt.toISOString(),
     updatedAt: referral.updatedAt.toISOString(),
     patient: serializePatient(referral.patient),
@@ -197,6 +211,19 @@ export function serializeReferral(
       slotStartsAt: iso(event.slot?.startsAt),
       slotEndsAt: iso(event.slot?.endsAt),
       createdAt: event.createdAt.toISOString(),
+    })),
+    attachments: referral.attachments.map((attachment) => ({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      fileType: attachment.fileType,
+      fileSize: attachment.fileSize,
+      storageProvider: attachment.storageProvider,
+      status: attachment.status,
+      cloudflareImageId: attachment.cloudflareImageId,
+      cloudflareVariantUrl: attachment.cloudflareVariantUrl,
+      uploadedByName: displayUser(attachment.uploadedBy),
+      uploadDate: attachment.uploadDate.toISOString(),
+      downloadUrl: `/api/attachments/${attachment.id}/download`,
     })),
   }
 }
@@ -288,7 +315,7 @@ export async function getPatientLookupData(
 
   if (!patient) return null
 
-  const [visits, referrals] = await Promise.all([
+  const [visits, referrals, labTests, prescriptions] = await Promise.all([
     prisma.patientVisit.findMany({
       where: { patientId: patient.id },
       orderBy: { visitedAt: 'desc' },
@@ -298,12 +325,24 @@ export async function getPatientLookupData(
       orderBy: { updatedAt: 'desc' },
       include: referralInclude,
     }),
+    prisma.labTest.findMany({
+      where: { patientId: patient.id },
+      orderBy: { requestDate: 'desc' },
+      include: labTestInclude,
+    }),
+    prisma.prescription.findMany({
+      where: { patientId: patient.id },
+      orderBy: { createdAt: 'desc' },
+      include: prescriptionInclude,
+    }),
   ])
 
   return {
     patient: serializePatient(patient),
     visits: visits.map(serializeVisit),
     referrals: referrals.map(serializeReferral),
+    labTests: labTests.map(serializeLabTest),
+    prescriptions: prescriptions.map(serializePrescription),
   }
 }
 
@@ -382,6 +421,46 @@ export async function getAllReferrals() {
     include: referralInclude,
   })
   return referrals.map(serializeReferral)
+}
+
+export async function getPatientMedicalHistory(userId: number) {
+  await ready()
+  const patient = await prisma.patientProfile.findUnique({
+    where: { userId },
+    include: { user: { select: { username: true } } },
+  })
+
+  if (!patient) return null
+
+  const [visits, referrals, labTests, prescriptions] = await Promise.all([
+    prisma.patientVisit.findMany({
+      where: { patientId: patient.id },
+      orderBy: { visitedAt: 'desc' },
+    }),
+    prisma.referral.findMany({
+      where: { patientId: patient.id },
+      orderBy: { updatedAt: 'desc' },
+      include: referralInclude,
+    }),
+    prisma.labTest.findMany({
+      where: { patientId: patient.id },
+      orderBy: { requestDate: 'desc' },
+      include: labTestInclude,
+    }),
+    prisma.prescription.findMany({
+      where: { patientId: patient.id },
+      orderBy: { createdAt: 'desc' },
+      include: prescriptionInclude,
+    }),
+  ])
+
+  return {
+    patient: serializePatient(patient),
+    visits: visits.map(serializeVisit),
+    referrals: referrals.map(serializeReferral),
+    labTests: labTests.map(serializeLabTest),
+    prescriptions: prescriptions.map(serializePrescription),
+  }
 }
 
 // ─── Lab Tests ───────────────────────────────────────────────────────────────

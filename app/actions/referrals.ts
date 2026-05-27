@@ -55,6 +55,28 @@ const CompleteSchema = z.object({
   note: NoteSchema,
 })
 
+const UpdateStatusSchema = z.object({
+  referralId: z.coerce.number().int().positive(),
+  status: z.enum([
+    ReferralStatus.PENDING,
+    ReferralStatus.ACCEPTED,
+    ReferralStatus.SCHEDULED,
+    ReferralStatus.IN_PROGRESS,
+    ReferralStatus.COMPLETED,
+  ]),
+  note: NoteSchema,
+})
+
+const RequestInfoSchema = z.object({
+  referralId: z.coerce.number().int().positive(),
+  note: NoteSchema,
+})
+
+const FeedbackSchema = z.object({
+  referralId: z.coerce.number().int().positive(),
+  feedback: NoteSchema,
+})
+
 function fieldErrors(error: z.ZodError) {
   return z.flattenError(error).fieldErrors
 }
@@ -377,6 +399,7 @@ export async function completeReferral(
         data: {
           status: ReferralStatus.COMPLETED,
           specialistNote: note,
+          completedAt: new Date(),
           currentSpecialistId: auth.session.userId,
         },
       }),
@@ -408,6 +431,203 @@ export async function completeReferral(
     return { success: true, message: 'Referral marked as completed.', version: Date.now() }
   } catch {
     return { message: 'Could not complete this referral.' }
+  }
+}
+
+export async function updateReferralStatus(
+  _state: ReferralActionState,
+  formData: FormData,
+): Promise<ReferralActionState> {
+  const auth = await requireSession([UserRole.SPECIALIST, UserRole.SUPER_ADMIN])
+  if ('error' in auth) return { message: auth.error }
+
+  const parsed = UpdateStatusSchema.safeParse({
+    referralId: formData.get('referralId'),
+    status: formData.get('status'),
+    note: formData.get('note'),
+  })
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) }
+
+  await ready()
+  const { referralId, status, note } = parsed.data
+
+  try {
+    const referral = await prisma.referral.findUnique({
+      where: { id: referralId },
+      select: { id: true, hospitalId: true, patient: { select: { userId: true } }, createdById: true },
+    })
+    if (!referral) return { message: 'Referral was not found.' }
+
+    const allowed = await canManageReferral(auth.session.userId, auth.session.role, referral.hospitalId)
+    if (!allowed) return { message: 'You cannot manage referrals for this hospital.' }
+
+    const now = new Date()
+    const eventType =
+      status === ReferralStatus.SCHEDULED ? ReferralEventType.SCHEDULED :
+      status === ReferralStatus.IN_PROGRESS ? ReferralEventType.IN_PROGRESS :
+      status === ReferralStatus.COMPLETED ? ReferralEventType.COMPLETED :
+      status === ReferralStatus.ACCEPTED ? ReferralEventType.ACCEPTED :
+      ReferralEventType.STATUS_UPDATED
+
+    await prisma.$transaction([
+      prisma.referral.update({
+        where: { id: referralId },
+        data: {
+          status,
+          specialistNote: note,
+          currentSpecialistId: auth.session.userId,
+          acceptedAt: status === ReferralStatus.ACCEPTED ? now : undefined,
+          completedAt: status === ReferralStatus.COMPLETED ? now : undefined,
+        },
+      }),
+      prisma.referralEvent.create({
+        data: {
+          referralId,
+          actorId: auth.session.userId,
+          type: eventType,
+          note,
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.patient.userId,
+          message: `Your referral status is now ${status.replace('_', ' ').toLowerCase()}.`,
+          type: 'referral_status',
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.createdById,
+          message: `Referral #${referralId} status changed to ${status.replace('_', ' ').toLowerCase()}.`,
+          type: 'referral_status',
+        },
+      }),
+    ])
+
+    revalidatePath('/dashboard')
+    return { success: true, message: 'Referral status updated.', version: Date.now() }
+  } catch {
+    return { message: 'Could not update this referral status.' }
+  }
+}
+
+export async function requestAdditionalInformation(
+  _state: ReferralActionState,
+  formData: FormData,
+): Promise<ReferralActionState> {
+  const auth = await requireSession([UserRole.SPECIALIST, UserRole.SUPER_ADMIN])
+  if ('error' in auth) return { message: auth.error }
+
+  const parsed = RequestInfoSchema.safeParse({
+    referralId: formData.get('referralId'),
+    note: formData.get('note'),
+  })
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) }
+
+  await ready()
+  const { referralId, note } = parsed.data
+
+  try {
+    const referral = await prisma.referral.findUnique({
+      where: { id: referralId },
+      select: { id: true, hospitalId: true, createdById: true },
+    })
+    if (!referral) return { message: 'Referral was not found.' }
+
+    const allowed = await canManageReferral(auth.session.userId, auth.session.role, referral.hospitalId)
+    if (!allowed) return { message: 'You cannot manage referrals for this hospital.' }
+
+    await prisma.$transaction([
+      prisma.referralEvent.create({
+        data: {
+          referralId,
+          actorId: auth.session.userId,
+          type: ReferralEventType.INFORMATION_REQUESTED,
+          note,
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.createdById,
+          message: `Referral #${referralId} needs additional information from the clinic doctor.`,
+          type: 'additional_info_requested',
+        },
+      }),
+    ])
+
+    revalidatePath('/dashboard')
+    return { success: true, message: 'Additional information request sent.', version: Date.now() }
+  } catch {
+    return { message: 'Could not request additional information.' }
+  }
+}
+
+export async function addReferralFeedback(
+  _state: ReferralActionState,
+  formData: FormData,
+): Promise<ReferralActionState> {
+  const auth = await requireSession([UserRole.SPECIALIST, UserRole.SUPER_ADMIN])
+  if ('error' in auth) return { message: auth.error }
+
+  const parsed = FeedbackSchema.safeParse({
+    referralId: formData.get('referralId'),
+    feedback: formData.get('feedback'),
+  })
+  if (!parsed.success) return { errors: fieldErrors(parsed.error) }
+
+  await ready()
+  const { referralId, feedback } = parsed.data
+
+  try {
+    const referral = await prisma.referral.findUnique({
+      where: { id: referralId },
+      select: { id: true, hospitalId: true, status: true, patient: { select: { userId: true } }, createdById: true },
+    })
+    if (!referral) return { message: 'Referral was not found.' }
+
+    const allowed = await canManageReferral(auth.session.userId, auth.session.role, referral.hospitalId)
+    if (!allowed) return { message: 'You cannot manage referrals for this hospital.' }
+    if (referral.status !== ReferralStatus.COMPLETED) {
+      return { message: 'Feedback can be added after the referral is completed.' }
+    }
+
+    await prisma.$transaction([
+      prisma.referral.update({
+        where: { id: referralId },
+        data: {
+          feedback,
+          feedbackAt: new Date(),
+          currentSpecialistId: auth.session.userId,
+        },
+      }),
+      prisma.referralEvent.create({
+        data: {
+          referralId,
+          actorId: auth.session.userId,
+          type: ReferralEventType.FEEDBACK_ADDED,
+          note: feedback,
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.createdById,
+          message: `Feedback was added to referral #${referralId}.`,
+          type: 'referral_feedback',
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: referral.patient.userId,
+          message: `Feedback was added to your completed referral.`,
+          type: 'referral_feedback',
+        },
+      }),
+    ])
+
+    revalidatePath('/dashboard')
+    return { success: true, message: 'Feedback added.', version: Date.now() }
+  } catch {
+    return { message: 'Could not add feedback.' }
   }
 }
 
