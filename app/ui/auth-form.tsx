@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useActionState, useEffect, useRef } from 'react'
 import { gsap } from 'gsap'
 import type { AuthFormState } from '@/app/actions/auth'
-import { REGISTERABLE_ROLES, ROLE_LABELS } from '@/app/lib/roles'
 
 type Action = (state: AuthFormState, formData: FormData) => Promise<AuthFormState>
 
@@ -14,10 +13,9 @@ type Props = {
   subtitle?: string
   submitLabel: string
   action: Action
-  altHref: string
-  altPrompt: string
-  altLabel: string
-  withRole?: boolean
+  altHref?: string
+  altPrompt?: string
+  altLabel?: string
 }
 
 export default function AuthForm({
@@ -28,7 +26,6 @@ export default function AuthForm({
   altHref,
   altPrompt,
   altLabel,
-  withRole = false,
 }: Props) {
   const [state, formAction, pending] = useActionState<AuthFormState, FormData>(action, undefined)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -96,7 +93,7 @@ export default function AuthForm({
               id="password"
               name="password"
               type="password"
-              autoComplete={withRole ? 'new-password' : 'current-password'}
+              autoComplete="current-password"
               required
               className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary placeholder:text-muted outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/15"
               placeholder="Enter password"
@@ -105,49 +102,6 @@ export default function AuthForm({
               <p className="text-xs text-danger">{state.errors.password[0]}</p>
             )}
           </div>
-
-          {withRole && (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="email" className="text-sm font-medium text-primary-soft">
-                  Email <span className="text-muted">(optional)</span>
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary placeholder:text-muted outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/15"
-                  placeholder="your@email.com"
-                />
-              </div>
-
-              <fieldset className="flex flex-col gap-2">
-                <legend className="text-sm font-medium text-primary-soft">I am a</legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {REGISTERABLE_ROLES.map((role, idx) => (
-                    <label key={role} className="cursor-pointer" htmlFor={`role-${role}`}>
-                      <input
-                        id={`role-${role}`}
-                        type="radio"
-                        name="role"
-                        value={role}
-                        defaultChecked={idx === 0}
-                        className="peer sr-only"
-                        required
-                      />
-                      <span className="flex items-center justify-center rounded-lg border border-border bg-surface-elevated px-3 py-2 text-xs font-medium text-primary-soft transition-all peer-checked:border-accent peer-checked:bg-accent-soft peer-checked:text-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/20 hover:border-accent/50">
-                        {ROLE_LABELS[role]}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {state?.errors?.role && (
-                  <p className="text-xs text-danger">{state.errors.role[0]}</p>
-                )}
-              </fieldset>
-            </>
-          )}
 
           {state?.message && (
             <p className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
@@ -164,17 +118,19 @@ export default function AuthForm({
           </button>
         </form>
 
-        <p className="mt-6 text-sm text-muted">
-          {altPrompt}{' '}
-          <Link href={altHref} className="font-medium text-accent hover:text-accent-bright transition-colors">
-            {altLabel}
-          </Link>
-        </p>
-        {!withRole && (
+        {altHref && altPrompt && altLabel && (
+          <p className="mt-6 text-sm text-muted">
+            {altPrompt}{' '}
+            <Link href={altHref} className="font-medium text-accent hover:text-accent-bright transition-colors">
+              {altLabel}
+            </Link>
+          </p>
+        )}
+        <div className={altHref ? 'mt-3' : 'mt-6'}>
           <Link href="/reset-password" className="mt-3 block text-sm font-medium text-accent hover:text-accent-bright transition-colors">
             Forgot password?
           </Link>
-        )}
+        </div>
         <div className="mt-4 flex gap-3 text-xs text-muted">
           <Link href="/about" className="hover:text-accent">About</Link>
           <Link href="/support" className="hover:text-accent">Support</Link>

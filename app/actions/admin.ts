@@ -2,13 +2,203 @@
 
 import bcrypt from 'bcryptjs'
 import { revalidatePath } from 'next/cache'
-import { UserRole } from '@/app/generated/prisma'
+import { z } from 'zod'
+import { Gender, UserRole } from '@/app/generated/prisma'
 import { prisma, ready } from '@/app/lib/prisma'
+import { USER_ROLES } from '@/app/lib/roles'
 import { getSession } from '@/app/lib/session'
 
 export type AdminActionState =
   | { success?: boolean; message?: string }
   | undefined
+
+export type AdminUserRow = {
+  id: number
+  username: string
+  email: string | null
+  role: UserRole
+  isActive: boolean
+  createdAt: string
+  plainPassword: string | null
+}
+
+export type HospitalOption = {
+  id: number
+  name: string
+  shortName: string
+  city: string
+}
+
+export type CreateUserState =
+  | {
+      success?: boolean
+      message?: string
+      user?: AdminUserRow
+      errors?: Record<string, string[] | undefined>
+    }
+  | undefined
+
+type CreateUserPayload = Record<string, string | undefined>
+
+const STAFF_ROLES = [
+  UserRole.DOCTOR,
+  UserRole.SPECIALIST,
+  UserRole.LAB_STAFF,
+  UserRole.PHARMACY_STAFF,
+] as const
+
+const userRowSelect = {
+  id: true,
+  username: true,
+  email: true,
+  role: true,
+  isActive: true,
+  createdAt: true,
+  plainPassword: true,
+} as const
+
+const optionalString = (max: number) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().trim().max(max, `Must be at most ${max} characters.`).optional(),
+  )
+
+const optionalPositiveInt = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string' || value.trim() === '') return undefined
+    const numberValue = Number(value)
+    return Number.isFinite(numberValue) ? numberValue : value
+  },
+  z.number().int().positive().optional(),
+)
+
+const CreateUserSchema = z.object({
+  username: z
+    .preprocess(
+      (value) => (typeof value === 'string' ? value.trim() : value),
+      z
+        .string()
+        .min(3, 'Username must be at least 3 characters.')
+        .max(64, 'Username must be at most 64 characters.')
+        .regex(/^[a-zA-Z0-9_.-]+$/, 'Only letters, numbers, "_", ".", "-" allowed.'),
+    )
+    .transform((value) => value.toLowerCase()),
+  email: z
+    .preprocess(
+      (value) => (typeof value === 'string' ? value.trim() : value),
+      z.string().email('Enter a valid email.').max(120, 'Email must be at most 120 characters.'),
+    )
+    .transform((value) => value.toLowerCase()),
+  password: z
+    .string()
+    .min(4, 'Password must be at least 4 characters.')
+    .max(200, 'Password is too long.'),
+  role: z.enum(USER_ROLES),
+  isActive: z.enum(['true', 'false']).transform((value) => value === 'true'),
+  patientFullName: optionalString(160),
+  uniId: optionalString(32),
+  gender: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.enum([Gender.MALE, Gender.FEMALE]).optional(),
+  ),
+  dob: optionalString(10),
+  phoneNumber: optionalString(32),
+  faculty: optionalString(80),
+  visitHospitalName: optionalString(180),
+  visitClinicName: optionalString(120),
+  visitDoctorName: optionalString(160),
+  visitDate: optionalString(10),
+  visitSummary: optionalString(240),
+  visitNotes: optionalString(1000),
+  staffFullName: optionalString(160),
+  staffTitle: optionalString(120),
+  specialization: optionalString(120),
+  department: optionalString(120),
+  labSection: optionalString(120),
+  hospitalId: optionalPositiveInt,
+}).superRefine((data, ctx) => {
+  if (data.role === UserRole.PATIENT) {
+    if (!data.patientFullName) {
+      ctx.addIssue({ code: 'custom', path: ['patientFullName'], message: 'Full name is required.' })
+    }
+    if (!data.uniId) {
+      ctx.addIssue({ code: 'custom', path: ['uniId'], message: 'University ID is required.' })
+    }
+    if (!data.gender) {
+      ctx.addIssue({ code: 'custom', path: ['gender'], message: 'Gender is required.' })
+    }
+    if (!data.dob) {
+      ctx.addIssue({ code: 'custom', path: ['dob'], message: 'Date of birth is required.' })
+    }
+  }
+
+  if (STAFF_ROLES.includes(data.role as (typeof STAFF_ROLES)[number])) {
+    if (!data.staffFullName) {
+      ctx.addIssue({ code: 'custom', path: ['staffFullName'], message: 'Full name is required.' })
+    }
+    if (!data.staffTitle) {
+      ctx.addIssue({ code: 'custom', path: ['staffTitle'], message: 'Title is required.' })
+    }
+    if (data.role === UserRole.SPECIALIST && !data.hospitalId) {
+      ctx.addIssue({ code: 'custom', path: ['hospitalId'], message: 'Choose a hospital for the specialist.' })
+    }
+  }
+
+  const hasVisit = Boolean(
+    data.visitHospitalName ||
+    data.visitClinicName ||
+    data.visitDoctorName ||
+    data.visitDate ||
+    data.visitSummary ||
+    data.visitNotes,
+  )
+  if (hasVisit) {
+    if (!data.visitHospitalName) {
+      ctx.addIssue({ code: 'custom', path: ['visitHospitalName'], message: 'Visit hospital is required.' })
+    }
+    if (!data.visitClinicName) {
+      ctx.addIssue({ code: 'custom', path: ['visitClinicName'], message: 'Visit clinic is required.' })
+    }
+    if (!data.visitDoctorName) {
+      ctx.addIssue({ code: 'custom', path: ['visitDoctorName'], message: 'Visit doctor is required.' })
+    }
+    if (!data.visitDate) {
+      ctx.addIssue({ code: 'custom', path: ['visitDate'], message: 'Visit date is required.' })
+    }
+    if (!data.visitSummary) {
+      ctx.addIssue({ code: 'custom', path: ['visitSummary'], message: 'Visit summary is required.' })
+    }
+  }
+})
+
+function parseInputDate(value: string) {
+  return new Date(`${value}T00:00:00.000Z`)
+}
+
+function toAdminUserRow(user: {
+  id: number
+  username: string
+  email: string | null
+  role: UserRole
+  isActive: boolean
+  createdAt: Date
+  plainPassword: string | null
+}): AdminUserRow {
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    isActive: user.isActive,
+    createdAt: user.createdAt.toISOString(),
+    plainPassword: user.plainPassword,
+  }
+}
+
+function formValue(source: FormData | CreateUserPayload, key: string) {
+  const value = source instanceof FormData ? source.get(key) : source[key]
+  return typeof value === 'string' ? value : undefined
+}
 
 async function requireAdmin() {
   const session = await getSession()
@@ -16,6 +206,152 @@ async function requireAdmin() {
     throw new Error('Forbidden')
   }
   return session
+}
+
+export async function createUser(
+  _state: CreateUserState,
+  formData: FormData | CreateUserPayload,
+): Promise<CreateUserState> {
+  await requireAdmin()
+
+  const parsed = CreateUserSchema.safeParse({
+    username: formValue(formData, 'username'),
+    email: formValue(formData, 'email'),
+    password: formValue(formData, 'password'),
+    role: formValue(formData, 'role'),
+    isActive: formValue(formData, 'isActive') || 'true',
+    patientFullName: formValue(formData, 'patientFullName'),
+    uniId: formValue(formData, 'uniId'),
+    gender: formValue(formData, 'gender'),
+    dob: formValue(formData, 'dob'),
+    phoneNumber: formValue(formData, 'phoneNumber'),
+    faculty: formValue(formData, 'faculty'),
+    visitHospitalName: formValue(formData, 'visitHospitalName'),
+    visitClinicName: formValue(formData, 'visitClinicName'),
+    visitDoctorName: formValue(formData, 'visitDoctorName'),
+    visitDate: formValue(formData, 'visitDate'),
+    visitSummary: formValue(formData, 'visitSummary'),
+    visitNotes: formValue(formData, 'visitNotes'),
+    staffFullName: formValue(formData, 'staffFullName'),
+    staffTitle: formValue(formData, 'staffTitle'),
+    specialization: formValue(formData, 'specialization'),
+    department: formValue(formData, 'department'),
+    labSection: formValue(formData, 'labSection'),
+    hospitalId: formValue(formData, 'hospitalId'),
+  })
+
+  if (!parsed.success) {
+    return { errors: z.flattenError(parsed.error).fieldErrors }
+  }
+
+  const data = parsed.data
+
+  try {
+    await ready()
+
+    const [existingUsername, existingEmail, existingUniId, selectedHospital] = await Promise.all([
+      prisma.user.findFirst({
+        where: { username: { equals: data.username, mode: 'insensitive' } },
+        select: { id: true },
+      }),
+      prisma.user.findFirst({
+        where: { email: { equals: data.email, mode: 'insensitive' } },
+        select: { id: true },
+      }),
+      data.role === UserRole.PATIENT && data.uniId
+        ? prisma.patientProfile.findFirst({
+            where: { uniId: { equals: data.uniId, mode: 'insensitive' } },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
+      data.hospitalId
+        ? prisma.hospital.findUnique({ where: { id: data.hospitalId }, select: { id: true } })
+        : Promise.resolve(null),
+    ])
+
+    const errors: Record<string, string[]> = {}
+    if (existingUsername) errors.username = ['Username is already taken.']
+    if (existingEmail) errors.email = ['Email is already assigned to another user.']
+    if (existingUniId) errors.uniId = ['University ID is already assigned to another patient.']
+    if (data.hospitalId && !selectedHospital) errors.hospitalId = ['Choose an existing hospital.']
+    if (Object.keys(errors).length > 0) return { errors }
+
+    const passwordHash = await bcrypt.hash(data.password, 10)
+    const user = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          username: data.username,
+          email: data.email,
+          passwordHash,
+          plainPassword: data.password,
+          role: data.role,
+          isActive: data.isActive,
+        },
+        select: userRowSelect,
+      })
+
+      if (data.role === UserRole.PATIENT) {
+        const patient = await tx.patientProfile.create({
+          data: {
+            userId: createdUser.id,
+            fullName: data.patientFullName!,
+            uniId: data.uniId!,
+            gender: data.gender!,
+            dob: parseInputDate(data.dob!),
+            phoneNumber: data.phoneNumber ?? null,
+            faculty: data.faculty ?? null,
+          },
+          select: { id: true },
+        })
+
+        if (
+          data.visitHospitalName &&
+          data.visitClinicName &&
+          data.visitDoctorName &&
+          data.visitDate &&
+          data.visitSummary
+        ) {
+          await tx.patientVisit.create({
+            data: {
+              patientId: patient.id,
+              hospitalName: data.visitHospitalName,
+              clinicName: data.visitClinicName,
+              doctorName: data.visitDoctorName,
+              visitedAt: parseInputDate(data.visitDate),
+              summary: data.visitSummary,
+              notes: data.visitNotes ?? '',
+            },
+          })
+        }
+      } else if (STAFF_ROLES.includes(data.role as (typeof STAFF_ROLES)[number])) {
+        await tx.staffProfile.create({
+          data: {
+            userId: createdUser.id,
+            fullName: data.staffFullName!,
+            title: data.staffTitle!,
+            specialization: data.specialization ?? null,
+            department: data.department ?? null,
+            labSection: data.labSection ?? null,
+            hospitalId: data.hospitalId ?? null,
+          },
+        })
+      }
+
+      return createdUser
+    })
+
+    revalidatePath('/dashboard/users')
+    revalidatePath('/dashboard')
+
+    return {
+      success: true,
+      message: 'User created.',
+      user: toAdminUserRow(user),
+    }
+  } catch (err) {
+    console.error('admin create user failed', err)
+    return { message: 'Something went wrong while creating the user.' }
+  }
 }
 
 export async function toggleUserActive(userId: number) {
@@ -68,6 +404,20 @@ export async function getAllUsers() {
       isActive: true,
       createdAt: true,
       plainPassword: true,
+    },
+  })
+}
+
+export async function getHospitalOptions(): Promise<HospitalOption[]> {
+  await requireAdmin()
+  await ready()
+  return prisma.hospital.findMany({
+    orderBy: { name: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      shortName: true,
+      city: true,
     },
   })
 }

@@ -2,15 +2,6 @@ import { UserRole } from '@/app/generated/prisma'
 
 export { UserRole }
 
-export const REGISTERABLE_ROLES = [
-  UserRole.PATIENT,
-  UserRole.DOCTOR,
-  UserRole.SPECIALIST,
-  UserRole.LAB_STAFF,
-  UserRole.PHARMACY_STAFF,
-] as const
-export type RegisterableRole = (typeof REGISTERABLE_ROLES)[number]
-
 export const USER_ROLES = [
   UserRole.SUPER_ADMIN,
   UserRole.PATIENT,

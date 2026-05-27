@@ -1,22 +1,25 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { changeUserPassword, changeUserRole, deleteUser, getUserDetails, toggleUserActive } from '@/app/actions/admin'
+import type { FormEvent } from 'react'
+import {
+  changeUserPassword,
+  changeUserRole,
+  createUser,
+  deleteUser,
+  getUserDetails,
+  toggleUserActive,
+  type AdminUserRow,
+  type CreateUserState,
+  type HospitalOption,
+} from '@/app/actions/admin'
 import { ROLE_LABELS, USER_ROLES, type UserRole } from '@/app/lib/roles'
 import { formatDate, formatDateTime } from '@/app/ui/dashboard-format'
-import { IconCheck, IconClose, IconEye, IconFreeze, IconKey, IconLoader, IconSearch, IconShield, IconTrash, IconUsers } from '@/app/ui/icons'
+import { IconCheck, IconClose, IconEye, IconFreeze, IconKey, IconLoader, IconPlus, IconSearch, IconShield, IconTrash, IconUsers } from '@/app/ui/icons'
 import { AnimatePresence, FadeInUp, motion, StaggerContainer, StaggerItem } from '@/app/ui/motion'
 import { StatCard } from '@/app/ui/stat-card'
 
-type UserRow = {
-  id: number
-  username: string
-  email: string | null
-  role: UserRole
-  isActive: boolean
-  createdAt: string
-  plainPassword: string | null
-}
+type UserRow = AdminUserRow
 
 type UserDetails = Awaited<ReturnType<typeof getUserDetails>>
 type LoadedUserDetails = NonNullable<UserDetails>
@@ -32,11 +35,18 @@ const ROLE_BADGE_COLORS: Record<string, string> = {
   PHARMACY_STAFF: 'bg-indigo-50 text-indigo-700 border-indigo-200',
 }
 
-export function AdminUsers({ initialUsers }: { initialUsers: UserRow[] }) {
+export function AdminUsers({
+  initialUsers,
+  hospitals,
+}: {
+  initialUsers: UserRow[]
+  hospitals: HospitalOption[]
+}) {
   const [users, setUsers] = useState(initialUsers)
   const [selectedUser, setSelectedUser] = useState<UserDetails>(null)
   const [selectedRow, setSelectedRow] = useState<UserRow | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const [filter, setFilter] = useState('ALL')
   const [search, setSearch] = useState('')
 
@@ -59,17 +69,34 @@ export function AdminUsers({ initialUsers }: { initialUsers: UserRow[] }) {
     setSelectedRow(updated)
   }
 
+  function handleUserCreated(created: UserRow) {
+    setUsers((prev) => [created, ...prev.filter((u) => u.id !== created.id)])
+    setFilter('ALL')
+    setSearch(created.username)
+    setShowCreateModal(false)
+  }
+
   return (
     <div className="space-y-6">
       <FadeInUp>
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-gradient-to-br from-primary to-primary-soft p-2.5 shadow-lg shadow-primary/10">
-            <IconUsers className="w-5 h-5 text-white" />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-gradient-to-br from-primary to-primary-soft p-2.5 shadow-lg shadow-primary/10">
+              <IconUsers className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-primary">User Management</h1>
+              <p className="text-sm text-muted">{users.length} registered users</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-primary">User Management</h1>
-            <p className="text-sm text-muted">{users.length} registered users</p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-accent/20 transition-all hover:bg-accent-bright disabled:opacity-60"
+          >
+            <IconPlus className="w-4 h-4" />
+            Create User
+          </button>
         </div>
       </FadeInUp>
 
@@ -180,6 +207,16 @@ export function AdminUsers({ initialUsers }: { initialUsers: UserRow[] }) {
         </StaggerContainer>
       </div>
 
+      <AnimatePresence>
+        {showCreateModal && (
+          <CreateUserModal
+            hospitals={hospitals}
+            onClose={() => setShowCreateModal(false)}
+            onCreated={handleUserCreated}
+          />
+        )}
+      </AnimatePresence>
+
       {/* User Detail Modal with Actions */}
       <AnimatePresence>
         {(selectedUser || detailsLoading) && (
@@ -194,6 +231,327 @@ export function AdminUsers({ initialUsers }: { initialUsers: UserRow[] }) {
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+function CreateUserModal({
+  hospitals,
+  onClose,
+  onCreated,
+}: {
+  hospitals: HospitalOption[]
+  onClose: () => void
+  onCreated: (user: UserRow) => void
+}) {
+  const [state, setState] = useState<CreateUserState>(undefined)
+  const [pending, startCreateTransition] = useTransition()
+  const [role, setRole] = useState<UserRole>('PATIENT')
+  const [includeVisit, setIncludeVisit] = useState(false)
+  const isPatient = role === 'PATIENT'
+  const isStaff = role === 'DOCTOR' || role === 'SPECIALIST' || role === 'LAB_STAFF' || role === 'PHARMACY_STAFF'
+  const isSpecialist = role === 'SPECIALIST'
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const payload: Record<string, string> = {}
+    formData.forEach((value, key) => {
+      if (typeof value === 'string') payload[key] = value
+    })
+
+    startCreateTransition(async () => {
+      const result = await createUser(undefined, payload)
+      setState(result)
+      if (result?.success && result.user) {
+        onCreated(result.user)
+      }
+    })
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.96, opacity: 0, y: 18 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.96, opacity: 0, y: 18 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        onClick={(event) => event.stopPropagation()}
+        className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-border bg-surface shadow-2xl"
+        data-testid="create-user-modal"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface px-5 py-4 sm:px-6">
+          <div>
+            <h2 className="text-lg font-bold text-primary">Create User</h2>
+            <p className="text-xs text-muted">Admins create accounts and assign role access.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-border p-2 text-muted transition-all hover:bg-surface-elevated hover:text-primary"
+            aria-label="Close create user"
+          >
+            <IconClose className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-6" noValidate>
+          <fieldset className="grid gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">
+            <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              Account
+            </legend>
+            <TextInput
+              label="Username"
+              name="username"
+              autoComplete="username"
+              required
+              error={firstError(state, 'username')}
+              placeholder="e.g. saleh.ahmad"
+            />
+            <TextInput
+              label="Email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              error={firstError(state, 'email')}
+              placeholder="name@ju.edu.jo"
+            />
+            <TextInput
+              label="Password"
+              name="password"
+              type="text"
+              autoComplete="new-password"
+              required
+              error={firstError(state, 'password')}
+              placeholder="Temporary password"
+            />
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-primary-soft">
+              Role
+              <select
+                name="role"
+                value={role}
+                onChange={(event) => {
+                  const nextRole = event.target.value as UserRole
+                  setRole(nextRole)
+                  if (nextRole !== 'PATIENT') setIncludeVisit(false)
+                }}
+                className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/10"
+              >
+                {USER_ROLES.map((userRole) => (
+                  <option key={userRole} value={userRole}>
+                    {ROLE_LABELS[userRole]}
+                  </option>
+                ))}
+              </select>
+              <ErrorText message={firstError(state, 'role')} />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-primary-soft">
+              Account status
+              <select
+                name="isActive"
+                defaultValue="true"
+                className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/10"
+              >
+                <option value="true">Active</option>
+                <option value="false">Frozen</option>
+              </select>
+            </label>
+          </fieldset>
+
+          {isPatient && (
+            <fieldset className="grid gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">
+              <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                Patient Profile
+              </legend>
+              <TextInput
+                label="Full name"
+                name="patientFullName"
+                required
+                error={firstError(state, 'patientFullName')}
+                placeholder="Student full name"
+              />
+              <TextInput
+                label="University ID"
+                name="uniId"
+                required
+                error={firstError(state, 'uniId')}
+                placeholder="e.g. 0233949"
+              />
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-primary-soft">
+                Gender
+                <select
+                  name="gender"
+                  defaultValue=""
+                  className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/10"
+                >
+                  <option value="">Select gender</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                </select>
+                <ErrorText message={firstError(state, 'gender')} />
+              </label>
+              <TextInput
+                label="Date of birth"
+                name="dob"
+                type="date"
+                required
+                error={firstError(state, 'dob')}
+              />
+              <TextInput
+                label="Phone"
+                name="phoneNumber"
+                type="tel"
+                error={firstError(state, 'phoneNumber')}
+                placeholder="+962..."
+              />
+              <TextInput
+                label="Faculty"
+                name="faculty"
+                error={firstError(state, 'faculty')}
+                placeholder="Optional"
+              />
+              <label className="flex items-center gap-2 text-sm font-medium text-primary-soft sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={includeVisit}
+                  onChange={(event) => setIncludeVisit(event.target.checked)}
+                  className="h-4 w-4 rounded border-border text-accent focus:ring-accent/20"
+                />
+                Add visit history
+              </label>
+              {includeVisit && (
+                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
+                  <TextInput
+                    label="Visit hospital"
+                    name="visitHospitalName"
+                    error={firstError(state, 'visitHospitalName')}
+                    placeholder="Hospital name"
+                  />
+                  <TextInput
+                    label="Visit clinic"
+                    name="visitClinicName"
+                    error={firstError(state, 'visitClinicName')}
+                    placeholder="Clinic name"
+                  />
+                  <TextInput
+                    label="Visit doctor"
+                    name="visitDoctorName"
+                    error={firstError(state, 'visitDoctorName')}
+                    placeholder="Doctor name"
+                  />
+                  <TextInput
+                    label="Visit date"
+                    name="visitDate"
+                    type="date"
+                    error={firstError(state, 'visitDate')}
+                  />
+                  <TextInput
+                    label="Visit summary"
+                    name="visitSummary"
+                    error={firstError(state, 'visitSummary')}
+                    placeholder="Brief summary"
+                  />
+                  <TextInput
+                    label="Visit notes"
+                    name="visitNotes"
+                    error={firstError(state, 'visitNotes')}
+                    placeholder="Optional notes"
+                  />
+                </div>
+              )}
+            </fieldset>
+          )}
+
+          {isStaff && (
+            <fieldset className="grid gap-4 rounded-xl border border-border p-4 sm:grid-cols-2">
+              <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                Staff Profile
+              </legend>
+              <TextInput
+                label="Full name"
+                name="staffFullName"
+                required
+                error={firstError(state, 'staffFullName')}
+                placeholder="Staff full name"
+              />
+              <TextInput
+                label="Title"
+                name="staffTitle"
+                required
+                error={firstError(state, 'staffTitle')}
+                placeholder="e.g. Referring Doctor"
+              />
+              <TextInput
+                label="Specialization"
+                name="specialization"
+                error={firstError(state, 'specialization')}
+                placeholder="Optional"
+              />
+              <TextInput
+                label="Department"
+                name="department"
+                error={firstError(state, 'department')}
+                placeholder="Optional"
+              />
+              {role === 'LAB_STAFF' && (
+                <TextInput
+                  label="Lab section"
+                  name="labSection"
+                  error={firstError(state, 'labSection')}
+                  placeholder="Optional"
+                />
+              )}
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-primary-soft">
+                Hospital {isSpecialist ? '' : <span className="text-muted">(optional)</span>}
+                <select
+                  name="hospitalId"
+                  defaultValue=""
+                  className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/10"
+                >
+                  <option value="">Select hospital</option>
+                  {hospitals.map((hospital) => (
+                    <option key={hospital.id} value={hospital.id}>
+                      {hospital.name} ({hospital.city})
+                    </option>
+                  ))}
+                </select>
+                <ErrorText message={firstError(state, 'hospitalId')} />
+              </label>
+            </fieldset>
+          )}
+
+          {state?.message && !state.success && (
+            <p className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+              {state.message}
+            </p>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-muted transition-all hover:bg-surface-elevated hover:text-primary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={pending}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-accent/20 transition-all hover:bg-accent-bright disabled:opacity-60"
+            >
+              {pending && <IconLoader className="w-4 h-4 animate-spin" />}
+              {pending ? 'Creating...' : 'Create account'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
   )
 }
 
@@ -458,6 +816,49 @@ function UserDetailModal({ user, row, loading, onClose, onUpdated, onDeleted }: 
         )}
       </motion.div>
     </motion.div>
+  )
+}
+
+function firstError(state: CreateUserState, field: string) {
+  return state?.errors?.[field]?.[0]
+}
+
+function ErrorText({ message }: { message?: string }) {
+  if (!message) return null
+  return <span className="text-xs font-medium text-danger">{message}</span>
+}
+
+function TextInput({
+  label,
+  name,
+  type = 'text',
+  autoComplete,
+  placeholder,
+  required,
+  error,
+}: {
+  label: string
+  name: string
+  type?: string
+  autoComplete?: string
+  placeholder?: string
+  required?: boolean
+  error?: string
+}) {
+  return (
+    <label className="flex flex-col gap-1.5 text-sm font-medium text-primary-soft">
+      {label} {required ? <span className="text-danger">*</span> : null}
+      <input
+        name={name}
+        type={type}
+        autoComplete={autoComplete}
+        placeholder={placeholder}
+        aria-invalid={Boolean(error)}
+        aria-required={required}
+        className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary outline-none transition-all placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/10"
+      />
+      <ErrorText message={error} />
+    </label>
   )
 }
 

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { UserRole } from '@/app/generated/prisma'
-import { getAllUsers } from '@/app/actions/admin'
+import { getAllUsers, getHospitalOptions } from '@/app/actions/admin'
 import { getSession } from '@/app/lib/session'
 import { AdminUsers } from '@/app/ui/admin-users'
 
@@ -11,7 +11,7 @@ export default async function UsersPage() {
   if (!session) redirect('/login')
   if (session.role !== UserRole.SUPER_ADMIN) redirect('/dashboard')
 
-  const users = await getAllUsers()
+  const [users, hospitals] = await Promise.all([getAllUsers(), getHospitalOptions()])
   const serialized = users.map((u) => ({
     id: u.id,
     username: u.username,
@@ -22,5 +22,5 @@ export default async function UsersPage() {
     plainPassword: u.plainPassword,
   }))
 
-  return <AdminUsers initialUsers={serialized} />
+  return <AdminUsers initialUsers={serialized} hospitals={hospitals} />
 }

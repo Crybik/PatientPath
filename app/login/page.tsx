@@ -17,9 +17,6 @@ export default async function LoginPage() {
       subtitle="Log in to continue."
       submitLabel="Log in"
       action={login}
-      altHref="/register"
-      altPrompt="No account yet?"
-      altLabel="Create one"
     />
   )
 }
