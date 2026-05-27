@@ -1,16 +1,13 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/login', '/register']
+const PUBLIC_PATHS = ['/login', '/register', '/about', '/support', '/reset-password']
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const sessionCookie = request.cookies.get('session')
 
   if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
-    if (sessionCookie) {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
-    }
     return NextResponse.next()
   }
 
