@@ -41,34 +41,34 @@ export default function AuthForm({
   }, [])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-10 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-0 left-0 h-96 w-96 rounded-full bg-accent/5 blur-3xl -translate-x-1/2 -translate-y-1/2" />
-      <div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-accent-bright/5 blur-3xl translate-x-1/2 translate-y-1/2" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background via-background to-surface-elevated px-4 py-12 relative overflow-hidden">
+      {/* Background premium decoration */}
+      <div className="absolute -top-40 -left-40 h-[500px] w-[500px] rounded-full bg-accent/8 blur-[120px] pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-accent-bright/6 blur-[120px] pointer-events-none" />
 
-      <div ref={cardRef} className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8 shadow-xl relative">
-        <div className="mb-6">
-          <div className="mb-4 flex items-center gap-3">
+      <div ref={cardRef} className="w-full max-w-md rounded-3xl border border-border/80 bg-surface/90 backdrop-blur-md p-8 sm:p-10 shadow-2xl shadow-accent/5 relative overflow-hidden">
+        {/* Top brand accent gradient bar */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-accent via-accent-bright to-accent" />
+
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="mb-5 transition-transform duration-300 hover:scale-105">
             <Image
               src="/PatientPath.png"
               alt="PatientPath"
-              width={36}
-              height={36}
+              width={200}
+              height={60}
               priority
-              style={{ width: 36, height: 36 }}
-              className="rounded-lg"
+              style={{ width: '100%', maxWidth: '180px', height: 'auto' }}
+              className="object-contain"
             />
-            <span className="text-xs font-semibold tracking-widest text-accent uppercase">
-              PatientPath
-            </span>
           </div>
-          <h1 className="text-2xl font-bold text-primary">{title}</h1>
-          {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
+          <h1 className="text-2xl font-bold tracking-tight text-primary mt-1">{title}</h1>
+          {subtitle && <p className="mt-2 text-sm text-muted/90">{subtitle}</p>}
         </div>
 
-        <form action={formAction} className="flex flex-col gap-4" noValidate>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="username" className="text-sm font-medium text-primary-soft">
+        <form action={formAction} className="flex flex-col gap-5" noValidate>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="username" className="text-xs font-semibold uppercase tracking-wider text-muted px-0.5">
               Username
             </label>
             <input
@@ -77,16 +77,16 @@ export default function AuthForm({
               type="text"
               autoComplete="username"
               required
-              className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary placeholder:text-muted outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/15"
+              className="rounded-xl border border-border bg-surface-elevated/50 px-4 py-3 text-sm text-primary placeholder:text-muted outline-none transition-all duration-200 focus:border-accent focus:bg-surface focus:ring-4 focus:ring-accent/10 focus:shadow-inner"
               placeholder="Enter username"
             />
             {state?.errors?.username && (
-              <p className="text-xs text-danger">{state.errors.username[0]}</p>
+              <p className="text-xs text-danger mt-1 px-0.5">{state.errors.username[0]}</p>
             )}
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="password" className="text-sm font-medium text-primary-soft">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="password" className="text-xs font-semibold uppercase tracking-wider text-muted px-0.5">
               Password
             </label>
             <input
@@ -95,16 +95,16 @@ export default function AuthForm({
               type="password"
               autoComplete="current-password"
               required
-              className="rounded-lg border border-border bg-surface-elevated px-3 py-2.5 text-sm text-primary placeholder:text-muted outline-none transition-all focus:border-accent focus:ring-2 focus:ring-accent/15"
+              className="rounded-xl border border-border bg-surface-elevated/50 px-4 py-3 text-sm text-primary placeholder:text-muted outline-none transition-all duration-200 focus:border-accent focus:bg-surface focus:ring-4 focus:ring-accent/10 focus:shadow-inner"
               placeholder="Enter password"
             />
             {state?.errors?.password && (
-              <p className="text-xs text-danger">{state.errors.password[0]}</p>
+              <p className="text-xs text-danger mt-1 px-0.5">{state.errors.password[0]}</p>
             )}
           </div>
 
           {state?.message && (
-            <p className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+            <p className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger mt-1">
               {state.message}
             </p>
           )}
@@ -112,28 +112,34 @@ export default function AuthForm({
           <button
             type="submit"
             disabled={pending}
-            className="mt-2 rounded-lg bg-gradient-to-r from-accent to-accent-bright px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-accent/20 transition-all hover:shadow-accent/30 disabled:opacity-50 disabled:shadow-none"
+            className="mt-2 rounded-xl bg-gradient-to-r from-accent to-accent-bright py-3 text-sm font-semibold text-white shadow-lg shadow-accent/25 hover:shadow-xl hover:shadow-accent/35 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:shadow-none disabled:scale-100"
           >
             {pending ? 'Please wait...' : submitLabel}
           </button>
         </form>
 
-        {altHref && altPrompt && altLabel && (
-          <p className="mt-6 text-sm text-muted">
-            {altPrompt}{' '}
-            <Link href={altHref} className="font-medium text-accent hover:text-accent-bright transition-colors">
-              {altLabel}
-            </Link>
-          </p>
-        )}
-        <div className={altHref ? 'mt-3' : 'mt-6'}>
-          <Link href="/reset-password" className="mt-3 block text-sm font-medium text-accent hover:text-accent-bright transition-colors">
-            Forgot password?
+        {/* Divider */}
+        <div className="my-6 border-t border-border/40" />
+
+        <div className="flex flex-col items-center gap-3 text-center">
+          {altHref && altPrompt && altLabel && (
+            <p className="text-sm text-muted">
+              {altPrompt}{' '}
+              <Link href={altHref} className="font-semibold text-accent hover:text-accent-bright transition-colors">
+                {altLabel}
+              </Link>
+            </p>
+          )}
+          
+          <Link href="/reset-password" className="text-xs font-medium text-accent hover:text-accent-bright transition-colors">
+            Forgot your password?
           </Link>
-        </div>
-        <div className="mt-4 flex gap-3 text-xs text-muted">
-          <Link href="/about" className="hover:text-accent">About</Link>
-          <Link href="/support" className="hover:text-accent">Support</Link>
+
+          <div className="mt-2 flex items-center gap-3 text-xs text-muted">
+            <Link href="/about" className="hover:text-accent transition-colors">About</Link>
+            <span className="h-3 w-px bg-border/60" />
+            <Link href="/support" className="hover:text-accent transition-colors">Support</Link>
+          </div>
         </div>
       </div>
     </div>

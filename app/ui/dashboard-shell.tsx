@@ -53,17 +53,16 @@ export function DashboardShell({
       <div className="flex min-h-screen w-full flex-col lg:flex-row">
         {/* Mobile header */}
         <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 lg:hidden">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center">
             <Image
               src="/PatientPath.png"
               alt="Logo"
-              width={32}
-              height={32}
+              width={140}
+              height={42}
               priority
-              style={{ width: 32, height: 32 }}
-              className="rounded-lg"
+              style={{ width: 'auto', height: 32 }}
+              className="h-8 w-auto object-contain"
             />
-            <span className="text-sm font-bold text-primary">PatientPath</span>
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />
@@ -85,20 +84,17 @@ export function DashboardShell({
         >
           {/* Logo */}
           <div className="hidden lg:block">
-            <div className="flex items-center gap-3 px-2 pb-5 border-b border-border">
+            <div className="flex flex-col items-center text-center gap-2 px-2 pb-5 border-b border-border">
               <Image
                 src="/PatientPath.png"
                 alt="Logo"
-                width={38}
-                height={38}
+                width={150}
+                height={45}
                 priority
-                style={{ width: 38, height: 38 }}
-                className="rounded-lg"
+                style={{ width: '100%', maxWidth: '130px', height: 'auto' }}
+                className="object-contain"
               />
-              <div>
-                <p className="text-sm font-bold text-primary">PatientPath</p>
-                <p className="text-[11px] text-muted">{roleLabel}</p>
-              </div>
+              <p className="text-[11px] text-muted px-1">{roleLabel}</p>
             </div>
           </div>
 
