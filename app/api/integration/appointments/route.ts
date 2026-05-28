@@ -9,7 +9,7 @@ const HOSPITAL = {
   name: 'Jordan University Hospital',
   shortName: 'JUH',
   city: 'Amman',
-  logoPath: '/jordan-university-hospital-logo.png',
+  logoPath: '/PatientPath.png',
 }
 
 async function ensurePatient(student: MockStudent, passwordHash: string) {

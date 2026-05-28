@@ -55,7 +55,7 @@ export function DashboardShell({
         <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 lg:hidden">
           <div className="flex items-center gap-3">
             <Image
-              src="/jordan-university-hospital-logo.png"
+              src="/PatientPath.png"
               alt="Logo"
               width={32}
               height={32}
@@ -87,7 +87,7 @@ export function DashboardShell({
           <div className="hidden lg:block">
             <div className="flex items-center gap-3 px-2 pb-5 border-b border-border">
               <Image
-                src="/jordan-university-hospital-logo.png"
+                src="/PatientPath.png"
                 alt="Logo"
                 width={38}
                 height={38}

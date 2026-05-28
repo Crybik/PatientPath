@@ -81,13 +81,13 @@ async function main() {
     update: {
       name: 'Jordan University Hospital',
       city: 'Amman',
-      logoPath: '/jordan-university-hospital-logo.png',
+      logoPath: '/PatientPath.png',
     },
     create: {
       name: 'Jordan University Hospital',
       shortName: 'JUH',
       city: 'Amman',
-      logoPath: '/jordan-university-hospital-logo.png',
+      logoPath: '/PatientPath.png',
     },
   })
 

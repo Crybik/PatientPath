@@ -50,7 +50,7 @@ export default function AuthForm({
         <div className="mb-6">
           <div className="mb-4 flex items-center gap-3">
             <Image
-              src="/jordan-university-hospital-logo.png"
+              src="/PatientPath.png"
               alt="PatientPath"
               width={36}
               height={36}
