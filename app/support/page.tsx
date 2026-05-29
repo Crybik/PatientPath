@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 import { getSession } from '@/app/lib/session'
 import { SupportForm } from '@/app/ui/support-form'
@@ -14,7 +15,18 @@ export default async function SupportPage() {
           <Link href={session ? '/dashboard' : '/login'} className="text-sm font-medium text-accent hover:text-accent-bright">
             Back
           </Link>
-          <h1 className="mt-4 text-3xl font-bold text-primary">Contact Support</h1>
+          <div className="mt-4 mb-2">
+            <Image
+              src="/PatientPath.png"
+              alt="PatientPath"
+              width={200}
+              height={60}
+              priority
+              style={{ width: '100%', maxWidth: '180px', height: 'auto' }}
+              className="object-contain"
+            />
+          </div>
+          <h1 className="mt-2 text-3xl font-bold text-primary">Contact Support</h1>
           <p className="mt-2 text-sm text-muted">
             Submit a technical issue or workflow support request for the PatientPath team.
           </p>

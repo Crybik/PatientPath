@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 import { getSession } from '@/app/lib/session'
 
@@ -13,7 +14,17 @@ export default async function AboutPage() {
           <Link href={session ? '/dashboard' : '/login'} className="text-sm font-medium text-accent hover:text-accent-bright">
             Back
           </Link>
-          <h1 className="mt-4 text-4xl font-bold text-primary">PatientPath</h1>
+          <div className="mt-4">
+            <Image
+              src="/PatientPath.png"
+              alt="PatientPath"
+              width={260}
+              height={78}
+              priority
+              style={{ width: '100%', maxWidth: '240px', height: 'auto' }}
+              className="object-contain"
+            />
+          </div>
           <p className="mt-3 max-w-2xl text-primary-soft">
             A digital medical referral network for the University of Jordan student clinic and Jordan University Hospital.
           </p>

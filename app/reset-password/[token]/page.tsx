@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import Link from 'next/link'
 import { ResetPasswordForm } from '@/app/ui/password-reset-forms'
 
@@ -15,7 +16,18 @@ export default async function ResetPasswordPage({
       <div className="mx-auto max-w-md space-y-6">
         <div>
           <Link href="/login" className="text-sm font-medium text-accent hover:text-accent-bright">Back to login</Link>
-          <h1 className="mt-4 text-3xl font-bold text-primary">Choose New Password</h1>
+          <div className="mt-4 mb-2">
+            <Image
+              src="/PatientPath.png"
+              alt="PatientPath"
+              width={200}
+              height={60}
+              priority
+              style={{ width: '100%', maxWidth: '180px', height: 'auto' }}
+              className="object-contain"
+            />
+          </div>
+          <h1 className="mt-2 text-3xl font-bold text-primary">Choose New Password</h1>
           <p className="mt-2 text-sm text-muted">Use the secure link from your reset email to set a new password.</p>
         </div>
         <ResetPasswordForm token={token} />

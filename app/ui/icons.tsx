@@ -38,5 +38,6 @@ export {
   PauseCircle as IconPause,
   CheckCheck as IconCheckAll,
   AlertCircle as IconAlert,
+  Menu as IconMenu,
   X as IconClose,
 } from 'lucide-react'
